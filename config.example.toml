@@ -1,0 +1,6 @@
+[telegram]
+bot_token = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+chat_id = "987654321"
+
+[general]
+log_retention_days = 30

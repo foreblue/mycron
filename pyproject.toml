@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mycron"
+version = "0.1.0"
+description = "CLI cron-style job scheduler with Telegram notifications"
+requires-python = ">=3.11"
+dependencies = [
+    "click>=8.0",
+    "APScheduler>=3.10,<4",
+]
+
+[project.scripts]
+mycron = "mycron.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

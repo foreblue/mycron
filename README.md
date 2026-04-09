@@ -1,0 +1,97 @@
+# mycron
+
+GUI 없이 동작하는 CLI cron 스타일 작업 스케줄러.
+
+- cron 표현식으로 쉘 커맨드 스케줄 등록
+- 실행 로그 SQLite 저장
+- 성공/실패 결과 텔레그램 알림
+
+## 설치
+
+```bash
+pipx install /path/to/mycron
+```
+
+## 빠른 시작
+
+```bash
+# 작업 등록
+mycron add --name backup --cron "0 3 * * *" --command "/path/to/backup.sh"
+
+# 스케줄러 시작
+mycron start
+
+# 상태 확인
+mycron status
+```
+
+## 텔레그램 알림 설정
+
+1. `@BotFather`에서 봇 생성 → `bot_token` 획득
+2. 봇에게 메시지를 보낸 뒤 `chat_id` 확인:
+   ```
+   https://api.telegram.org/bot<TOKEN>/getUpdates
+   ```
+3. 설정 파일 생성:
+   ```bash
+   mkdir -p ~/.mycron
+   cp config.example.toml ~/.mycron/config.toml
+   # 편집기로 bot_token, chat_id 입력
+   ```
+
+## CLI 명령어
+
+### 작업 관리
+
+| 명령어 | 설명 |
+|---|---|
+| `mycron add --name NAME --cron EXPR --command CMD` | 작업 등록 |
+| `mycron remove NAME` | 작업 삭제 |
+| `mycron list` | 활성 작업 목록 |
+| `mycron list --all` | 전체 작업 목록 (비활성 포함) |
+| `mycron enable NAME` | 작업 활성화 |
+| `mycron disable NAME` | 작업 비활성화 |
+
+### 실행 및 로그
+
+| 명령어 | 설명 |
+|---|---|
+| `mycron run NAME` | 즉시 실행 (테스트용) |
+| `mycron logs` | 전체 실행 로그 |
+| `mycron logs NAME` | 특정 작업 로그 |
+| `mycron logs NAME --limit 50` | 로그 수 지정 |
+
+### 데몬
+
+| 명령어 | 설명 |
+|---|---|
+| `mycron start` | 백그라운드 데몬 시작 |
+| `mycron start --foreground` | 포그라운드 실행 (디버그) |
+| `mycron stop` | 데몬 중지 |
+| `mycron status` | 데몬 상태 확인 |
+
+## Cron 표현식 예시
+
+```
+* * * * *        매분
+0 7 * * *        매일 07:00
+0 9 * * 1-5      평일 09:00
+0 */6 * * *      6시간마다
+30 18 * * 5      매주 금요일 18:30
+```
+
+## 파일 위치
+
+| 파일 | 설명 |
+|---|---|
+| `~/.mycron/config.toml` | 텔레그램 등 설정 |
+| `~/.mycron/mycron.db` | 작업 정의 + 실행 로그 |
+| `~/.mycron/daemon.log` | 데몬 운영 로그 |
+| `~/.mycron/mycron.pid` | 데몬 PID |
+
+## 코드 수정 후
+
+```bash
+pipx install --force /path/to/mycron
+mycron stop && mycron start
+```
