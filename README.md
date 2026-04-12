@@ -69,6 +69,8 @@ mycron status
 | `mycron start --foreground` | 포그라운드 실행 (디버그) |
 | `mycron stop` | 데몬 중지 |
 | `mycron status` | 데몬 상태 확인 |
+| `mycron install` | macOS LaunchAgent 등록 (재시작 후 자동 실행) |
+| `mycron uninstall` | LaunchAgent 해제 |
 
 ## Cron 표현식 예시
 
@@ -89,9 +91,22 @@ mycron status
 | `~/.mycron/daemon.log` | 데몬 운영 로그 |
 | `~/.mycron/mycron.pid` | 데몬 PID |
 
+## 자동 시작 (macOS)
+
+`mycron install`을 실행하면 macOS LaunchAgent로 등록되어 시스템 재시작 후에도 자동으로 실행됩니다.
+
+```bash
+mycron install      # LaunchAgent 등록
+mycron uninstall    # LaunchAgent 해제
+```
+
+- `RunAtLoad`: 로그인 시 자동 시작
+- `KeepAlive`: 비정상 종료 시 자동 재시작
+- plist 위치: `~/Library/LaunchAgents/com.dysim.mycron.plist`
+
 ## 코드 수정 후
 
 ```bash
 pipx install --force /path/to/mycron
-mycron stop && mycron start
+mycron uninstall && mycron install   # LaunchAgent 재등록
 ```

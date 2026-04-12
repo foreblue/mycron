@@ -5,6 +5,7 @@ import click
 from .config import load_config
 from . import db as database
 from . import daemon
+from . import launchd
 from .executor import run_command
 from .notifier import send as notify
 
@@ -218,3 +219,17 @@ def status():
     """스케줄러 데몬의 상태를 확인합니다."""
     cfg = load_config()
     daemon.status(cfg)
+
+
+# ──────────────────────────── launchd ────────────────────────────
+
+@main.command()
+def install():
+    """macOS LaunchAgent를 등록합니다 (재시작 후 자동 실행)."""
+    launchd.install()
+
+
+@main.command()
+def uninstall():
+    """macOS LaunchAgent를 해제합니다."""
+    launchd.uninstall()
