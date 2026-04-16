@@ -1,6 +1,7 @@
 import logging
 import sqlite3
 
+from apscheduler.events import EVENT_JOB_MAX_INSTANCES
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -14,9 +15,16 @@ logger = logging.getLogger(__name__)
 
 def create_scheduler(cfg: Config, conn: sqlite3.Connection) -> BackgroundScheduler:
     scheduler = BackgroundScheduler()
+    scheduler.add_listener(_on_max_instances, EVENT_JOB_MAX_INSTANCES)
     _register_jobs(scheduler, cfg, conn)
     _register_maintenance(scheduler, cfg, conn)
     return scheduler
+
+
+def _on_max_instances(event) -> None:
+    logger.warning(
+        "Job '%s' skipped: previous execution still running", event.job_id
+    )
 
 
 def reload_jobs(scheduler: BackgroundScheduler, cfg: Config, conn: sqlite3.Connection) -> None:
@@ -32,15 +40,19 @@ def _register_jobs(scheduler: BackgroundScheduler, cfg: Config, conn: sqlite3.Co
     jobs = database.list_jobs(conn, include_disabled=False)
     for job in jobs:
         trigger = CronTrigger.from_crontab(job.cron_expr)
-        scheduler.add_job(
-            _execute_job,
+        kwargs = dict(
             trigger=trigger,
             id=f"job_{job.id}",
             name=job.name,
             args=[cfg, conn, job.id, job.name, job.command],
             replace_existing=True,
         )
-        logger.info("Registered job '%s' with cron '%s'", job.name, job.cron_expr)
+        if job.skip_if_running:
+            kwargs["max_instances"] = 1
+            kwargs["coalesce"] = True
+        scheduler.add_job(_execute_job, **kwargs)
+        skip_tag = " [skip_if_running]" if job.skip_if_running else ""
+        logger.info("Registered job '%s' with cron '%s'%s", job.name, job.cron_expr, skip_tag)
 
 
 def _register_maintenance(scheduler: BackgroundScheduler, cfg: Config, conn: sqlite3.Connection) -> None:

@@ -11,6 +11,7 @@ class Job:
     cron_expr: str
     command: str
     enabled: bool
+    skip_if_running: bool
     created_at: str
     updated_at: str
 
@@ -40,13 +41,14 @@ def connect(db_path: Path) -> sqlite3.Connection:
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS jobs (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            name        TEXT    NOT NULL UNIQUE,
-            cron_expr   TEXT    NOT NULL,
-            command     TEXT    NOT NULL,
-            enabled     INTEGER NOT NULL DEFAULT 1,
-            created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now')),
-            updated_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now'))
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            name             TEXT    NOT NULL UNIQUE,
+            cron_expr        TEXT    NOT NULL,
+            command          TEXT    NOT NULL,
+            enabled          INTEGER NOT NULL DEFAULT 1,
+            skip_if_running  INTEGER NOT NULL DEFAULT 0,
+            created_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now')),
+            updated_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now'))
         );
 
         CREATE TABLE IF NOT EXISTS logs (
@@ -64,14 +66,27 @@ def init_db(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_logs_job_id     ON logs(job_id);
         CREATE INDEX IF NOT EXISTS idx_logs_started_at ON logs(started_at);
     """)
+    _migrate(conn)
     conn.commit()
 
 
-def add_job(conn: sqlite3.Connection, name: str, cron_expr: str, command: str) -> Job:
+def _migrate(conn: sqlite3.Connection) -> None:
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()}
+    if "skip_if_running" not in cols:
+        conn.execute("ALTER TABLE jobs ADD COLUMN skip_if_running INTEGER NOT NULL DEFAULT 0")
+
+
+def add_job(
+    conn: sqlite3.Connection,
+    name: str,
+    cron_expr: str,
+    command: str,
+    skip_if_running: bool = False,
+) -> Job:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
     conn.execute(
-        "INSERT INTO jobs (name, cron_expr, command, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-        (name, cron_expr, command, now, now),
+        "INSERT INTO jobs (name, cron_expr, command, skip_if_running, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (name, cron_expr, command, 1 if skip_if_running else 0, now, now),
     )
     conn.commit()
     return get_job(conn, name)
@@ -169,6 +184,7 @@ def _row_to_job(row: sqlite3.Row) -> Job:
         cron_expr=row["cron_expr"],
         command=row["command"],
         enabled=bool(row["enabled"]),
+        skip_if_running=bool(row["skip_if_running"]),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )

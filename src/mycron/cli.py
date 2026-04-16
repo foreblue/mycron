@@ -21,7 +21,8 @@ def main():
 @click.option("--name", required=True, help="작업 이름")
 @click.option("--cron", "cron_expr", required=True, help='Cron 표현식 (예: "0 * * * *")')
 @click.option("--command", required=True, help="실행할 쉘 커맨드")
-def add(name, cron_expr, command):
+@click.option("--skip-if-running", is_flag=True, default=False, help="이전 실행이 진행 중이면 새 실행을 건너뜁니다")
+def add(name, cron_expr, command, skip_if_running):
     """새 작업을 등록합니다."""
     cfg = load_config()
     conn = database.connect(cfg.db_path)
@@ -31,8 +32,9 @@ def add(name, cron_expr, command):
         click.echo(f"오류: '{name}' 이름의 작업이 이미 존재합니다.", err=True)
         sys.exit(1)
 
-    job = database.add_job(conn, name, cron_expr, command)
-    click.echo(f"작업 등록됨: {job.name} ({job.cron_expr}) → {job.command}")
+    job = database.add_job(conn, name, cron_expr, command, skip_if_running=skip_if_running)
+    skip_tag = " [skip_if_running]" if job.skip_if_running else ""
+    click.echo(f"작업 등록됨: {job.name} ({job.cron_expr}) → {job.command}{skip_tag}")
     daemon.signal_reload(cfg)
 
 
@@ -65,13 +67,14 @@ def list_jobs(include_all):
         click.echo("등록된 작업이 없습니다.")
         return
 
-    header = f"{'이름':<20} {'Cron':<15} {'상태':<8} {'커맨드'}"
+    header = f"{'이름':<20} {'Cron':<15} {'상태':<8} {'옵션':<6} {'커맨드'}"
     click.echo(header)
-    click.echo("-" * 70)
+    click.echo("-" * 78)
     for job in jobs:
         status = "활성" if job.enabled else "비활성"
+        opts = "skip" if job.skip_if_running else ""
         cmd = job.command if len(job.command) <= 30 else job.command[:27] + "..."
-        click.echo(f"{job.name:<20} {job.cron_expr:<15} {status:<8} {cmd}")
+        click.echo(f"{job.name:<20} {job.cron_expr:<15} {status:<8} {opts:<6} {cmd}")
 
 
 @main.command()
