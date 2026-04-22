@@ -1,18 +1,32 @@
 #!/usr/bin/env bash
-# 7개 리포를 순회하면서 이슈를 확인하고 /dev-flow 실행
+# backlog/repos.txt 에 등재된 리포를 순회하면서 /dev-flow 실행
 set -euo pipefail
 
 CLAUDE="/Users/dysim/.local/bin/claude"
 WORKSPACE="/Users/dysim/workspace"
-REPOS=(
-    golf-memo
-    deepheart-gw
-    telegram-receiver
-    cube-solver
-    unified-proxy
-    stueng
-    mycron
-)
+REPOS_FILE="${WORKSPACE}/backlog/repos.txt"
+
+if [[ ! -f "$REPOS_FILE" ]]; then
+    echo "[ERROR] repos file not found: ${REPOS_FILE}" >&2
+    exit 1
+fi
+
+REPOS=()
+while IFS= read -r repo; do
+    [[ -n "$repo" ]] && REPOS+=("$repo")
+done < <(awk -F'|' '
+    /^[[:space:]]*(#|$)/ { next }
+    {
+        name = $1
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", name)
+        if (name) print name
+    }
+' "$REPOS_FILE")
+
+if [[ ${#REPOS[@]} -eq 0 ]]; then
+    echo "[ERROR] no repos listed in ${REPOS_FILE}" >&2
+    exit 1
+fi
 
 for repo in "${REPOS[@]}"; do
     repo_dir="${WORKSPACE}/${repo}"
