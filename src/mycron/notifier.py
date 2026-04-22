@@ -13,8 +13,15 @@ TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 TIMEOUT = 10
 
 
-def send(cfg: TelegramConfig, job_name: str, result: ExecutionResult) -> bool:
+def send(
+    cfg: TelegramConfig,
+    job_name: str,
+    result: ExecutionResult,
+    notify_on_success: bool = True,
+) -> bool:
     if not cfg.enabled:
+        return False
+    if result.success and not notify_on_success:
         return False
 
     message = _build_message(job_name, result)

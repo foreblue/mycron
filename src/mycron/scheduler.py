@@ -44,7 +44,7 @@ def _register_jobs(scheduler: BackgroundScheduler, cfg: Config, conn: sqlite3.Co
             trigger=trigger,
             id=f"job_{job.id}",
             name=job.name,
-            args=[cfg, conn, job.id, job.name, job.command],
+            args=[cfg, conn, job.id, job.name, job.command, job.notify_on_success],
             replace_existing=True,
         )
         if job.skip_if_running:
@@ -65,7 +65,14 @@ def _register_maintenance(scheduler: BackgroundScheduler, cfg: Config, conn: sql
     )
 
 
-def _execute_job(cfg: Config, conn: sqlite3.Connection, job_id: int, job_name: str, command: str) -> None:
+def _execute_job(
+    cfg: Config,
+    conn: sqlite3.Connection,
+    job_id: int,
+    job_name: str,
+    command: str,
+    notify_on_success: bool,
+) -> None:
     logger.info("Executing job '%s': %s", job_name, command)
     result = run_command(command)
 
@@ -83,7 +90,7 @@ def _execute_job(cfg: Config, conn: sqlite3.Connection, job_id: int, job_name: s
     status = "SUCCESS" if result.success else f"FAILED (exit {result.exit_code})"
     logger.info("Job '%s' %s in %dms", job_name, status, result.duration_ms)
 
-    notified = send(cfg.telegram, job_name, result)
+    notified = send(cfg.telegram, job_name, result, notify_on_success=notify_on_success)
     if notified:
         database.mark_log_notified(conn, log_id)
 

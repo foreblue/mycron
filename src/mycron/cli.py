@@ -22,7 +22,8 @@ def main():
 @click.option("--cron", "cron_expr", required=True, help='Cron 표현식 (예: "0 * * * *")')
 @click.option("--command", required=True, help="실행할 쉘 커맨드")
 @click.option("--skip-if-running", is_flag=True, default=False, help="이전 실행이 진행 중이면 새 실행을 건너뜁니다")
-def add(name, cron_expr, command, skip_if_running):
+@click.option("--no-success-notify", is_flag=True, default=False, help="성공 시 텔레그램 알림을 보내지 않습니다 (실패 시만 알림)")
+def add(name, cron_expr, command, skip_if_running, no_success_notify):
     """새 작업을 등록합니다."""
     cfg = load_config()
     conn = database.connect(cfg.db_path)
@@ -32,9 +33,21 @@ def add(name, cron_expr, command, skip_if_running):
         click.echo(f"오류: '{name}' 이름의 작업이 이미 존재합니다.", err=True)
         sys.exit(1)
 
-    job = database.add_job(conn, name, cron_expr, command, skip_if_running=skip_if_running)
-    skip_tag = " [skip_if_running]" if job.skip_if_running else ""
-    click.echo(f"작업 등록됨: {job.name} ({job.cron_expr}) → {job.command}{skip_tag}")
+    job = database.add_job(
+        conn,
+        name,
+        cron_expr,
+        command,
+        skip_if_running=skip_if_running,
+        notify_on_success=not no_success_notify,
+    )
+    tags = []
+    if job.skip_if_running:
+        tags.append("skip_if_running")
+    if not job.notify_on_success:
+        tags.append("no_success_notify")
+    tag_str = f" [{','.join(tags)}]" if tags else ""
+    click.echo(f"작업 등록됨: {job.name} ({job.cron_expr}) → {job.command}{tag_str}")
     daemon.signal_reload(cfg)
 
 
@@ -67,14 +80,19 @@ def list_jobs(include_all):
         click.echo("등록된 작업이 없습니다.")
         return
 
-    header = f"{'이름':<20} {'Cron':<15} {'상태':<8} {'옵션':<6} {'커맨드'}"
+    header = f"{'이름':<20} {'Cron':<15} {'상태':<8} {'옵션':<18} {'커맨드'}"
     click.echo(header)
-    click.echo("-" * 78)
+    click.echo("-" * 90)
     for job in jobs:
         status = "활성" if job.enabled else "비활성"
-        opts = "skip" if job.skip_if_running else ""
+        opt_parts = []
+        if job.skip_if_running:
+            opt_parts.append("skip")
+        if not job.notify_on_success:
+            opt_parts.append("no-notify-ok")
+        opts = ",".join(opt_parts)
         cmd = job.command if len(job.command) <= 30 else job.command[:27] + "..."
-        click.echo(f"{job.name:<20} {job.cron_expr:<15} {status:<8} {opts:<6} {cmd}")
+        click.echo(f"{job.name:<20} {job.cron_expr:<15} {status:<8} {opts:<18} {cmd}")
 
 
 @main.command()
@@ -109,6 +127,24 @@ def disable(name):
     daemon.signal_reload(cfg)
 
 
+@main.command("set-notify")
+@click.argument("name")
+@click.option("--on-success/--no-success", default=True, help="성공 시 알림 여부 (기본: --on-success)")
+def set_notify(name, on_success):
+    """작업의 성공 알림 여부를 변경합니다."""
+    cfg = load_config()
+    conn = database.connect(cfg.db_path)
+    database.init_db(conn)
+
+    if not database.set_job_notify_on_success(conn, name, on_success):
+        click.echo(f"오류: '{name}' 작업을 찾을 수 없습니다.", err=True)
+        sys.exit(1)
+
+    state = "ON" if on_success else "OFF"
+    click.echo(f"성공 알림 {state}: {name}")
+    daemon.signal_reload(cfg)
+
+
 # ──────────────────────────── execution ────────────────────────────
 
 @main.command()
@@ -138,7 +174,7 @@ def run(name):
         stderr=result.stderr,
     )
 
-    notified = notify(cfg.telegram, job.name, result)
+    notified = notify(cfg.telegram, job.name, result, notify_on_success=job.notify_on_success)
     if notified:
         database.mark_log_notified(conn, log_id)
 
