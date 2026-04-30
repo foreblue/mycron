@@ -1,4 +1,5 @@
 import sys
+from datetime import datetime, timezone
 
 import click
 
@@ -8,6 +9,19 @@ from . import daemon
 from . import launchd
 from .executor import run_command
 from .notifier import send as notify
+
+
+def _fmt_local(ts: str) -> str:
+    """UTC로 저장된 ISO 타임스탬프를 로컬 타임존으로 변환해 표시합니다."""
+    try:
+        return (
+            datetime.fromisoformat(ts)
+            .replace(tzinfo=timezone.utc)
+            .astimezone()
+            .strftime("%Y-%m-%dT%H:%M:%S")
+        )
+    except ValueError:
+        return ts
 
 
 @click.group()
@@ -227,7 +241,7 @@ def logs(name, limit):
         duration_s = entry.duration_ms / 1000
         notified = " [알림전송]" if entry.notified else ""
         job_col = f"[{entry.job_name}]" if not name else ""
-        click.echo(f"{entry.started_at}  {status:<10} {duration_s:>7.1f}s  {job_col}{notified}")
+        click.echo(f"{_fmt_local(entry.started_at)}  {status:<10} {duration_s:>7.1f}s  {job_col}{notified}")
         if entry.stderr and entry.exit_code != 0:
             snippet = entry.stderr[:200].replace("\n", " ")
             click.echo(f"  stderr: {snippet}")

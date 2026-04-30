@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # backlog/repos.txt 에 등재된 리포를 순회하면서 /dev-flow 실행
-set -euo pipefail
+set -uo pipefail
 
-CLAUDE="/Users/dysim/.local/bin/claude"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/_lib.sh"
+
 WORKSPACE="/Users/dysim/workspace"
 REPOS_FILE="${WORKSPACE}/backlog/repos.txt"
 
@@ -40,9 +42,21 @@ for repo in "${REPOS[@]}"; do
     echo "=========================================="
 
     cd "$repo_dir"
-    "$CLAUDE" --dangerously-skip-permissions -p "/dev-flow" || {
-        echo "[ERROR] ${repo}: dev-flow failed (exit $?)"
-    }
+    echo "[ENGINE] $(flow_engine)"
+    output=$(run_dev_flow 2>&1)
+    ec=$?
+    printf '%s\n' "$output"
+
+    if claude_hit_limit <<<"$output"; then
+        reset_info=$(extract_limit_reset <<<"$output")
+        send_telegram "⚠️ dev-flow 중단 (${repo} 처리 중): Claude 사용량 한도 도달 (${reset_info:-reset 시각 미상}). 이후 리포 스킵."
+        echo "[ABORT] ${repo}: Claude 한도 도달 — 남은 리포 스킵"
+        exit 0
+    fi
+
+    if [[ $ec -ne 0 ]]; then
+        echo "[ERROR] ${repo}: dev-flow failed (exit ${ec})"
+    fi
 
     echo "[DONE] ${repo}"
     echo ""

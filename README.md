@@ -91,6 +91,31 @@ mycron status
 | `~/.mycron/daemon.log` | 데몬 운영 로그 |
 | `~/.mycron/mycron.pid` | 데몬 PID |
 
+## Flow 실행 엔진 변경
+
+`plan-flow`, `dev-flow-all` 작업은 Claude 또는 Codex 중 하나를 선택해 실행할 수 있습니다.
+현재 기본 엔진은 `~/.mycron/flow-engine` 파일에서 매 실행마다 읽습니다.
+
+```bash
+# Codex로 전환
+echo codex > ~/.mycron/flow-engine
+
+# Claude로 전환
+echo claude > ~/.mycron/flow-engine
+
+# 현재 설정 확인
+cat ~/.mycron/flow-engine
+```
+
+일회성으로만 바꾸려면 `FLOW_ENGINE` 환경변수를 붙여 실행합니다.
+
+```bash
+FLOW_ENGINE=claude mycron run plan-flow
+FLOW_ENGINE=codex mycron run dev-flow-all
+```
+
+스케줄러 데몬은 시작 시점의 환경변수만 상속하므로, 정기 실행 엔진을 바꿀 때는 환경변수보다 `~/.mycron/flow-engine` 파일을 사용하는 것이 안전합니다.
+
 ## 자동 시작 (macOS)
 
 `mycron install`을 실행하면 macOS LaunchAgent로 등록되어 시스템 재시작 후에도 자동으로 실행됩니다.
