@@ -30,6 +30,8 @@ if [[ ${#REPOS[@]} -eq 0 ]]; then
     exit 1
 fi
 
+failed=0
+
 for repo in "${REPOS[@]}"; do
     repo_dir="${WORKSPACE}/${repo}"
     if [[ ! -d "$repo_dir" ]]; then
@@ -56,10 +58,16 @@ for repo in "${REPOS[@]}"; do
 
     if [[ $ec -ne 0 ]]; then
         echo "[ERROR] ${repo}: dev-flow failed (exit ${ec})"
+        failed=1
     fi
 
     echo "[DONE] ${repo}"
     echo ""
 done
 
-echo "All repos processed."
+if [[ $failed -ne 0 ]]; then
+    echo "All repos processed with failures."
+    exit 1
+fi
+
+echo "All repos processed successfully."

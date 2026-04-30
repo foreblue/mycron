@@ -8,6 +8,12 @@ PYTHON_BIN="/Users/dysim/workspace/mycron/.venv/bin/python3"
 FLOW_ENGINE_FILE="/Users/dysim/.mycron/flow-engine"
 CLAUDE_LIMIT_MARKER="You've hit your limit"
 
+# LaunchAgent/mycron daemon environments are intentionally sparse on macOS.
+# Codex is installed under Homebrew and uses `#!/usr/bin/env node`, so node
+# must be discoverable through PATH even when the daemon starts with
+# `/usr/bin:/bin:/usr/sbin:/sbin`.
+export PATH="/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
+
 flow_engine() {
     local engine="${FLOW_ENGINE:-}"
     if [[ -z "$engine" && -f "$FLOW_ENGINE_FILE" ]]; then
