@@ -7,6 +7,27 @@ source "$SCRIPT_DIR/_lib.sh"
 
 WORKSPACE="/Users/dysim/workspace"
 REPOS_FILE="${WORKSPACE}/backlog/repos.txt"
+NEEDS_HUMAN_LABEL="needs-human"
+
+has_eligible_issue() {
+    local issue_count
+
+    if ! command -v gh >/dev/null 2>&1; then
+        echo "[WARN] gh not found; cannot pre-filter issues by ${NEEDS_HUMAN_LABEL}" >&2
+        return 0
+    fi
+
+    if ! issue_count=$(gh issue list \
+        --state open \
+        --limit 1000 \
+        --json labels \
+        --jq "map(select([.labels[].name] | index(\"${NEEDS_HUMAN_LABEL}\") | not)) | length" 2>/dev/null); then
+        echo "[WARN] failed to fetch issues; running dev-flow without pre-filter" >&2
+        return 0
+    fi
+
+    [[ "$issue_count" -gt 0 ]]
+}
 
 if [[ ! -f "$REPOS_FILE" ]]; then
     echo "[ERROR] repos file not found: ${REPOS_FILE}" >&2
@@ -44,6 +65,12 @@ for repo in "${REPOS[@]}"; do
     echo "=========================================="
 
     cd "$repo_dir"
+    if ! has_eligible_issue; then
+        echo "[SKIP] ${repo}: no open issues without ${NEEDS_HUMAN_LABEL}"
+        echo ""
+        continue
+    fi
+
     echo "[ENGINE] $(flow_engine)"
     output=$(run_dev_flow 2>&1)
     ec=$?
