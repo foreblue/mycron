@@ -47,7 +47,7 @@ run_dev_flow() {
         codex)
             "$CODEX_BIN" -a never exec \
                 --dangerously-bypass-approvals-and-sandbox \
-                "Use \$dev-flow. Process all eligible open issues. Exclude issues labeled needs-human. If an issue requires human input or manual intervention, add the needs-human label, comment with the blocker, and skip it until a human removes that label."
+                "Use \$dev-flow. Process all eligible open issues. Exclude issues labeled needs-human or qa-record. Treat qa-record issues as QA evidence/result records, not development work. If an issue requires human input or manual intervention, add the needs-human label, comment with the blocker, and skip it until a human removes that label."
             ;;
         *)
             echo "[ERROR] unknown FLOW_ENGINE: $(flow_engine)" >&2

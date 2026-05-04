@@ -8,12 +8,13 @@ source "$SCRIPT_DIR/_lib.sh"
 WORKSPACE="/Users/dysim/workspace"
 REPOS_FILE="${WORKSPACE}/backlog/repos.txt"
 NEEDS_HUMAN_LABEL="needs-human"
+QA_RECORD_LABEL="qa-record"
 
 has_eligible_issue() {
     local issue_count
 
     if ! command -v gh >/dev/null 2>&1; then
-        echo "[WARN] gh not found; cannot pre-filter issues by ${NEEDS_HUMAN_LABEL}" >&2
+        echo "[WARN] gh not found; cannot pre-filter issues by ${NEEDS_HUMAN_LABEL}/${QA_RECORD_LABEL}" >&2
         return 0
     fi
 
@@ -21,7 +22,7 @@ has_eligible_issue() {
         --state open \
         --limit 1000 \
         --json labels \
-        --jq "map(select([.labels[].name] | index(\"${NEEDS_HUMAN_LABEL}\") | not)) | length" 2>/dev/null); then
+        --jq "map(select(([.labels[].name] | index(\"${NEEDS_HUMAN_LABEL}\") | not) and ([.labels[].name] | index(\"${QA_RECORD_LABEL}\") | not))) | length" 2>/dev/null); then
         echo "[WARN] failed to fetch issues; running dev-flow without pre-filter" >&2
         return 0
     fi
@@ -66,7 +67,7 @@ for repo in "${REPOS[@]}"; do
 
     cd "$repo_dir"
     if ! has_eligible_issue; then
-        echo "[SKIP] ${repo}: no open issues without ${NEEDS_HUMAN_LABEL}"
+        echo "[SKIP] ${repo}: no open issues without ${NEEDS_HUMAN_LABEL}/${QA_RECORD_LABEL}"
         echo ""
         continue
     fi
