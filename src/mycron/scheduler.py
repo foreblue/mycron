@@ -12,9 +12,13 @@ from .notifier import send
 
 logger = logging.getLogger(__name__)
 
+MISFIRE_GRACE_TIME_SECONDS = 10
+
 
 def create_scheduler(cfg: Config, conn: sqlite3.Connection) -> BackgroundScheduler:
-    scheduler = BackgroundScheduler()
+    scheduler = BackgroundScheduler(
+        job_defaults={"misfire_grace_time": MISFIRE_GRACE_TIME_SECONDS}
+    )
     scheduler.add_listener(_on_max_instances, EVENT_JOB_MAX_INSTANCES)
     _register_jobs(scheduler, cfg, conn)
     _register_maintenance(scheduler, cfg, conn)
