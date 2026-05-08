@@ -116,6 +116,18 @@ FLOW_ENGINE=codex mycron run dev-flow-all
 
 스케줄러 데몬은 시작 시점의 환경변수만 상속하므로, 정기 실행 엔진을 바꿀 때는 환경변수보다 `~/.mycron/flow-engine` 파일을 사용하는 것이 안전합니다.
 
+`dev-flow-all`은 각 리포의 `dev-flow`가 성공하면 QA 후보 위치(`.`, `web`, `frontend`, `client`, `app`, `apps/web`)를 검사하고, E2E/회귀 명령이 있는 경우 `qa-flow` 회귀 게이트를 실행합니다. 산출물은 기본적으로 `~/workspace/qa-artifacts`에 저장되고, 이슈에는 단일 QA 보고서 링크를 사용할 수 있도록 `report.html`과 `issue-body.md`가 생성됩니다.
+
+```bash
+# QA 게이트 비활성화
+QA_FLOW_AFTER_DEV_FLOW=0 mycron run dev-flow-all
+
+# QA 산출물 경로/URL 변경
+QA_ARTIFACT_ROOT=~/workspace/qa-artifacts \
+QA_ARTIFACT_BASE_URL=https://artifacts.deepheart.duckdns.org \
+  mycron run dev-flow-all
+```
+
 ## 자동 시작 (macOS)
 
 `mycron install`을 실행하면 macOS LaunchAgent로 등록되어 시스템 재시작 후에도 자동으로 실행됩니다.
