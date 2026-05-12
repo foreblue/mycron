@@ -42,12 +42,14 @@ run_plan_flow() {
 run_dev_flow() {
     case "$(flow_engine)" in
         claude)
-            "$CLAUDE_BIN" --dangerously-skip-permissions -p "/dev-flow"
+            DEV_FLOW_DEPLOY=0 "$CLAUDE_BIN" --dangerously-skip-permissions -p "/dev-flow
+
+Batch mode override: DEV_FLOW_DEPLOY=0 is set. Process eligible issues through merge, but skip Stage 8 deployment. dev-flow-all will run the QA gate and execute deploy.sh only after QA passes."
             ;;
         codex)
-            "$CODEX_BIN" -a never exec \
+            DEV_FLOW_DEPLOY=0 "$CODEX_BIN" -a never exec \
                 --dangerously-bypass-approvals-and-sandbox \
-                "Use \$dev-flow. Process all eligible open issues. Exclude issues labeled needs-human or qa-record. Treat qa-record issues as QA evidence/result records, not development work. If an issue requires human input or manual intervention, add the needs-human label, comment with the blocker, and skip it until a human removes that label."
+                "Use \$dev-flow. Process all eligible open issues. Exclude issues labeled needs-human or qa-record. Treat qa-record issues as QA evidence/result records, not development work. If an issue requires human input or manual intervention, add the needs-human label, comment with the blocker, and skip it until a human removes that label. DEV_FLOW_DEPLOY=0 is set for this batch run: do not run deploy.sh inside dev-flow. dev-flow-all will run QA and deploy only after QA passes."
             ;;
         *)
             echo "[ERROR] unknown FLOW_ENGINE: $(flow_engine)" >&2
