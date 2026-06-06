@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .executor import DEFAULT_TIMEOUT_SECONDS
+
 
 @dataclass
 class Job:
@@ -13,6 +15,7 @@ class Job:
     enabled: bool
     skip_if_running: bool
     notify_on_success: bool
+    timeout_seconds: float
     created_at: str
     updated_at: str
 
@@ -40,7 +43,7 @@ def connect(db_path: Path) -> sqlite3.Connection:
 
 
 def init_db(conn: sqlite3.Connection) -> None:
-    conn.executescript("""
+    conn.executescript(f"""
         CREATE TABLE IF NOT EXISTS jobs (
             id                 INTEGER PRIMARY KEY AUTOINCREMENT,
             name               TEXT    NOT NULL UNIQUE,
@@ -49,6 +52,7 @@ def init_db(conn: sqlite3.Connection) -> None:
             enabled            INTEGER NOT NULL DEFAULT 1,
             skip_if_running    INTEGER NOT NULL DEFAULT 0,
             notify_on_success  INTEGER NOT NULL DEFAULT 1,
+            timeout_seconds    REAL    NOT NULL DEFAULT {DEFAULT_TIMEOUT_SECONDS},
             created_at         TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now')),
             updated_at         TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now'))
         );
@@ -78,6 +82,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE jobs ADD COLUMN skip_if_running INTEGER NOT NULL DEFAULT 0")
     if "notify_on_success" not in cols:
         conn.execute("ALTER TABLE jobs ADD COLUMN notify_on_success INTEGER NOT NULL DEFAULT 1")
+    if "timeout_seconds" not in cols:
+        conn.execute(
+            f"ALTER TABLE jobs ADD COLUMN timeout_seconds REAL NOT NULL DEFAULT {DEFAULT_TIMEOUT_SECONDS}"
+        )
 
 
 def add_job(
@@ -87,11 +95,23 @@ def add_job(
     command: str,
     skip_if_running: bool = False,
     notify_on_success: bool = True,
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
 ) -> Job:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
     conn.execute(
-        "INSERT INTO jobs (name, cron_expr, command, skip_if_running, notify_on_success, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (name, cron_expr, command, 1 if skip_if_running else 0, 1 if notify_on_success else 0, now, now),
+        """INSERT INTO jobs
+           (name, cron_expr, command, skip_if_running, notify_on_success, timeout_seconds, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            name,
+            cron_expr,
+            command,
+            1 if skip_if_running else 0,
+            1 if notify_on_success else 0,
+            timeout_seconds,
+            now,
+            now,
+        ),
     )
     conn.commit()
     return get_job(conn, name)
@@ -131,6 +151,16 @@ def set_job_notify_on_success(conn: sqlite3.Connection, name: str, notify: bool)
     cur = conn.execute(
         "UPDATE jobs SET notify_on_success = ?, updated_at = ? WHERE name = ?",
         (1 if notify else 0, now, name),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def set_job_timeout(conn: sqlite3.Connection, name: str, timeout_seconds: float) -> bool:
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    cur = conn.execute(
+        "UPDATE jobs SET timeout_seconds = ?, updated_at = ? WHERE name = ?",
+        (timeout_seconds, now, name),
     )
     conn.commit()
     return cur.rowcount > 0
@@ -201,6 +231,7 @@ def _row_to_job(row: sqlite3.Row) -> Job:
         enabled=bool(row["enabled"]),
         skip_if_running=bool(row["skip_if_running"]),
         notify_on_success=bool(row["notify_on_success"]),
+        timeout_seconds=float(row["timeout_seconds"]),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )

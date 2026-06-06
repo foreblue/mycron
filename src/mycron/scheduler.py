@@ -48,7 +48,15 @@ def _register_jobs(scheduler: BackgroundScheduler, cfg: Config, conn: sqlite3.Co
             trigger=trigger,
             id=f"job_{job.id}",
             name=job.name,
-            args=[cfg, conn, job.id, job.name, job.command, job.notify_on_success],
+            args=[
+                cfg,
+                conn,
+                job.id,
+                job.name,
+                job.command,
+                job.notify_on_success,
+                job.timeout_seconds,
+            ],
             replace_existing=True,
         )
         if job.skip_if_running:
@@ -76,9 +84,10 @@ def _execute_job(
     job_name: str,
     command: str,
     notify_on_success: bool,
+    timeout_seconds: float,
 ) -> None:
     logger.info("Executing job '%s': %s", job_name, command)
-    result = run_command(command)
+    result = run_command(command, timeout=timeout_seconds)
 
     log_id = database.insert_log(
         conn,

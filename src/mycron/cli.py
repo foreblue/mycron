@@ -7,8 +7,11 @@ from .config import load_config
 from . import db as database
 from . import daemon
 from . import launchd
-from .executor import run_command
+from .executor import DEFAULT_TIMEOUT_SECONDS, run_command
 from .notifier import send as notify
+
+
+TIMEOUT_TYPE = click.FloatRange(min=0, min_open=True)
 
 
 def _fmt_local(ts: str) -> str:
@@ -24,6 +27,12 @@ def _fmt_local(ts: str) -> str:
         return ts
 
 
+def _fmt_timeout(timeout_seconds: float) -> str:
+    if float(timeout_seconds).is_integer():
+        return str(int(timeout_seconds))
+    return str(timeout_seconds)
+
+
 @click.group()
 def main():
     """mycron - cron 스타일 작업 스케줄러"""
@@ -37,7 +46,15 @@ def main():
 @click.option("--command", required=True, help="실행할 쉘 커맨드")
 @click.option("--skip-if-running", is_flag=True, default=False, help="이전 실행이 진행 중이면 새 실행을 건너뜁니다")
 @click.option("--no-success-notify", is_flag=True, default=False, help="성공 시 텔레그램 알림을 보내지 않습니다 (실패 시만 알림)")
-def add(name, cron_expr, command, skip_if_running, no_success_notify):
+@click.option(
+    "--timeout",
+    "timeout_seconds",
+    type=TIMEOUT_TYPE,
+    default=DEFAULT_TIMEOUT_SECONDS,
+    show_default=True,
+    help="작업 실행 제한 시간(초)",
+)
+def add(name, cron_expr, command, skip_if_running, no_success_notify, timeout_seconds):
     """새 작업을 등록합니다."""
     cfg = load_config()
     conn = database.connect(cfg.db_path)
@@ -54,12 +71,15 @@ def add(name, cron_expr, command, skip_if_running, no_success_notify):
         command,
         skip_if_running=skip_if_running,
         notify_on_success=not no_success_notify,
+        timeout_seconds=timeout_seconds,
     )
     tags = []
     if job.skip_if_running:
         tags.append("skip_if_running")
     if not job.notify_on_success:
         tags.append("no_success_notify")
+    if job.timeout_seconds != DEFAULT_TIMEOUT_SECONDS:
+        tags.append(f"timeout={_fmt_timeout(job.timeout_seconds)}s")
     tag_str = f" [{','.join(tags)}]" if tags else ""
     click.echo(f"작업 등록됨: {job.name} ({job.cron_expr}) → {job.command}{tag_str}")
     daemon.signal_reload(cfg)
@@ -94,9 +114,9 @@ def list_jobs(include_all):
         click.echo("등록된 작업이 없습니다.")
         return
 
-    header = f"{'이름':<20} {'Cron':<15} {'상태':<8} {'옵션':<18} {'커맨드'}"
+    header = f"{'이름':<20} {'Cron':<15} {'상태':<8} {'옵션':<32} {'커맨드'}"
     click.echo(header)
-    click.echo("-" * 90)
+    click.echo("-" * 110)
     for job in jobs:
         status = "활성" if job.enabled else "비활성"
         opt_parts = []
@@ -104,9 +124,11 @@ def list_jobs(include_all):
             opt_parts.append("skip")
         if not job.notify_on_success:
             opt_parts.append("no-notify-ok")
+        if job.timeout_seconds != DEFAULT_TIMEOUT_SECONDS:
+            opt_parts.append(f"timeout={_fmt_timeout(job.timeout_seconds)}s")
         opts = ",".join(opt_parts)
         cmd = job.command if len(job.command) <= 30 else job.command[:27] + "..."
-        click.echo(f"{job.name:<20} {job.cron_expr:<15} {status:<8} {opts:<18} {cmd}")
+        click.echo(f"{job.name:<20} {job.cron_expr:<15} {status:<8} {opts:<32} {cmd}")
 
 
 @main.command()
@@ -159,6 +181,29 @@ def set_notify(name, on_success):
     daemon.signal_reload(cfg)
 
 
+@main.command("set-timeout")
+@click.argument("name")
+@click.option(
+    "--timeout",
+    "timeout_seconds",
+    type=TIMEOUT_TYPE,
+    required=True,
+    help="작업 실행 제한 시간(초)",
+)
+def set_timeout(name, timeout_seconds):
+    """작업의 실행 제한 시간을 변경합니다."""
+    cfg = load_config()
+    conn = database.connect(cfg.db_path)
+    database.init_db(conn)
+
+    if not database.set_job_timeout(conn, name, timeout_seconds):
+        click.echo(f"오류: '{name}' 작업을 찾을 수 없습니다.", err=True)
+        sys.exit(1)
+
+    click.echo(f"Timeout 설정됨: {name} ({_fmt_timeout(timeout_seconds)}s)")
+    daemon.signal_reload(cfg)
+
+
 # ──────────────────────────── execution ────────────────────────────
 
 @main.command()
@@ -174,8 +219,8 @@ def run(name):
         click.echo(f"오류: '{name}' 작업을 찾을 수 없습니다.", err=True)
         sys.exit(1)
 
-    click.echo(f"실행 중: {job.command}")
-    result = run_command(job.command)
+    click.echo(f"실행 중: {job.command} (timeout: {_fmt_timeout(job.timeout_seconds)}s)")
+    result = run_command(job.command, timeout=job.timeout_seconds)
 
     log_id = database.insert_log(
         conn,

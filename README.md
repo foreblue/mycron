@@ -45,12 +45,15 @@ mycron status
 
 | 명령어 | 설명 |
 |---|---|
-| `mycron add --name NAME --cron EXPR --command CMD` | 작업 등록 |
+| `mycron add --name NAME --cron EXPR --command CMD [--timeout SECONDS]` | 작업 등록 |
 | `mycron remove NAME` | 작업 삭제 |
 | `mycron list` | 활성 작업 목록 |
 | `mycron list --all` | 전체 작업 목록 (비활성 포함) |
 | `mycron enable NAME` | 작업 활성화 |
 | `mycron disable NAME` | 작업 비활성화 |
+| `mycron set-timeout NAME --timeout SECONDS` | 작업별 실행 제한 시간 변경 |
+
+작업 timeout 기본값은 3600초입니다.
 
 ### 실행 및 로그
 
