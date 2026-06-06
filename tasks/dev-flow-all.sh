@@ -10,8 +10,10 @@ REPOS_FILE="${WORKSPACE}/backlog/repos.txt"
 NEEDS_HUMAN_LABEL="needs-human"
 QA_RECORD_LABEL="qa-record"
 QA_FLOW_GATE="${QA_FLOW_GATE:-/Users/dysim/mylogs/codex/skills/qa-flow/scripts/qa-regression-gate.sh}"
-QA_ARTIFACT_ROOT_DEFAULT="${WORKSPACE}/qa-artifacts"
+QA_ARTIFACT_ROOT_DEFAULT="${WORKSPACE}/artifacts"
 QA_ARTIFACT_BASE_URL_DEFAULT="https://artifacts.deepheart.duckdns.org"
+DEV_FLOW_ALL_EXCLUDED_REPOS="${DEV_FLOW_ALL_EXCLUDED_REPOS-restaurant-service}"
+#DEV_FLOW_ALL_EXCLUDED_REPOS=""
 QA_FAILURE_LABELS=(
     "qa-record"
     "qa-regression"
@@ -34,6 +36,20 @@ QA_ROOT_CANDIDATES=(
     "app"
     "apps/web"
 )
+
+is_excluded_repo() {
+    local repo="$1"
+    local excluded excluded_repos
+    local excluded_repo_list=()
+    excluded_repos="${DEV_FLOW_ALL_EXCLUDED_REPOS//,/ }"
+
+    read -r -a excluded_repo_list <<< "$excluded_repos"
+    for excluded in "${excluded_repo_list[@]}"; do
+        [[ "$repo" == "$excluded" ]] && return 0
+    done
+
+    return 1
+}
 
 has_eligible_issue() {
     local issue_count
@@ -387,6 +403,11 @@ failed=0
 
 for repo in "${REPOS[@]}"; do
     repo_dir="${WORKSPACE}/${repo}"
+    if is_excluded_repo "$repo"; then
+        echo "[SKIP] ${repo}: excluded from dev-flow-all"
+        continue
+    fi
+
     if [[ ! -d "$repo_dir" ]]; then
         echo "[SKIP] ${repo}: directory not found"
         continue
