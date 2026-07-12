@@ -1,19 +1,21 @@
 #!/usr/bin/env bash
-# backlog/repos.txt 에 등재된 리포를 순회하면서 /dev-flow 실행
+# WORKSPACE 하위의 git 리포를 자동 탐색해서 순회하면서 /dev-flow 실행.
+# 대상은 origin owner 가 DEV_FLOW_ALL_OWNER 인 리포로 한정하고,
+# DEV_FLOW_ALL_EXCLUDED_REPOS 에 적힌 리포는 건너뛴다.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/_lib.sh"
 
 WORKSPACE="/Users/dysim/workspace"
-REPOS_FILE="${WORKSPACE}/backlog/repos.txt"
 NEEDS_HUMAN_LABEL="needs-human"
 QA_RECORD_LABEL="qa-record"
 QA_FLOW_GATE="${QA_FLOW_GATE:-/Users/dysim/mylogs/codex/skills/qa-flow/scripts/qa-regression-gate.sh}"
 QA_ARTIFACT_ROOT_DEFAULT="${WORKSPACE}/artifacts"
 QA_ARTIFACT_BASE_URL_DEFAULT="https://artifacts.deepheart.duckdns.org"
-DEV_FLOW_ALL_EXCLUDED_REPOS="${DEV_FLOW_ALL_EXCLUDED_REPOS-restaurant-service}"
-#DEV_FLOW_ALL_EXCLUDED_REPOS=""
+DEV_FLOW_ALL_OWNER="${DEV_FLOW_ALL_OWNER:-foreblue}"
+# backlog 는 plan-flow 허브, 나머지는 자율 개발 대상에서 뺀 리포.
+DEV_FLOW_ALL_EXCLUDED_REPOS="${DEV_FLOW_ALL_EXCLUDED_REPOS-restaurant-service backlog new-pension}"
 QA_FAILURE_LABELS=(
     "qa-record"
     "qa-regression"
@@ -49,6 +51,31 @@ is_excluded_repo() {
     done
 
     return 1
+}
+
+# origin URL 에서 owner 를 뽑는다. github.com 리모트가 아니면 빈 문자열.
+remote_owner() {
+    local repo_dir="$1"
+    local url
+
+    url="$(git -C "$repo_dir" remote get-url origin 2>/dev/null)" || return 0
+    sed -nE 's#^.*github\.com[:/]([^/]+)/.+$#\1#p' <<<"${url%.git}"
+}
+
+# WORKSPACE 하위에서 DEV_FLOW_ALL_OWNER 소유의 git 리포 이름을 정렬해서 출력한다.
+discover_repos() {
+    local dir repo owner
+
+    for dir in "$WORKSPACE"/*/; do
+        repo="$(basename "$dir")"
+
+        git -C "$dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 || continue
+
+        owner="$(remote_owner "$dir")"
+        [[ "$owner" == "$DEV_FLOW_ALL_OWNER" ]] || continue
+
+        printf '%s\n' "$repo"
+    done | sort
 }
 
 has_eligible_issue() {
@@ -377,27 +404,22 @@ ${output_tail}"
     send_telegram "배포 완료 (${repo})"
 }
 
-if [[ ! -f "$REPOS_FILE" ]]; then
-    echo "[ERROR] repos file not found: ${REPOS_FILE}" >&2
+if [[ ! -d "$WORKSPACE" ]]; then
+    echo "[ERROR] workspace not found: ${WORKSPACE}" >&2
     exit 1
 fi
 
 REPOS=()
 while IFS= read -r repo; do
     [[ -n "$repo" ]] && REPOS+=("$repo")
-done < <(awk -F'|' '
-    /^[[:space:]]*(#|$)/ { next }
-    {
-        name = $1
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", name)
-        if (name) print name
-    }
-' "$REPOS_FILE")
+done < <(discover_repos)
 
 if [[ ${#REPOS[@]} -eq 0 ]]; then
-    echo "[ERROR] no repos listed in ${REPOS_FILE}" >&2
+    echo "[ERROR] no ${DEV_FLOW_ALL_OWNER}-owned git repos found under ${WORKSPACE}" >&2
     exit 1
 fi
+
+echo "[DISCOVERED] ${#REPOS[@]} repos: ${REPOS[*]}"
 
 failed=0
 
