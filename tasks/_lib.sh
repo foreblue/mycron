@@ -6,7 +6,9 @@ CLAUDE_BIN="/Users/dysim/.local/bin/claude"
 CODEX_BIN="/opt/homebrew/bin/codex"
 PYTHON_BIN="/Users/dysim/workspace/mycron/.venv/bin/python3"
 FLOW_ENGINE_FILE="/Users/dysim/.mycron/flow-engine"
-CLAUDE_LIMIT_MARKER="You've hit your limit"
+# Claude: "You've hit your limit" / "You've hit your session limit"
+# Codex: "You've hit your usage limit"
+LIMIT_MARKER_REGEX="You've hit your (usage |session )?limit"
 
 # LaunchAgent/mycron daemon environments are intentionally sparse on macOS.
 # Codex is installed under Homebrew and uses `#!/usr/bin/env node`, so node
@@ -58,14 +60,15 @@ Batch mode override: DEV_FLOW_DEPLOY=0 is set. Process eligible issues through m
     esac
 }
 
-# stdin 이 Claude 한도 메시지를 포함하는지 검사한다.
+# stdin 이 Claude/Codex 사용량 한도 메시지를 포함하는지 검사한다.
 claude_hit_limit() {
-    grep -qF "$CLAUDE_LIMIT_MARKER"
+    grep -qE "$LIMIT_MARKER_REGEX"
 }
 
-# stdin 에서 "resets …" 구간을 뽑아 리셋 시각 힌트를 돌려준다.
+# stdin 에서 리셋 시각 힌트를 뽑는다.
+# Claude: "resets …" / Codex: "try again at Jul 30th, 2026 11:30 PM."
 extract_limit_reset() {
-    grep -oE "resets [^·]+" | head -1 | sed 's/[[:space:]]*$//'
+    grep -oE "(resets [^·]+|try again at [^.]+)" | head -1 | sed 's/[[:space:]]*$//'
 }
 
 # Telegram 으로 임의 텍스트를 발송한다. 설정이 없으면 조용히 실패.
