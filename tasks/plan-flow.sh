@@ -5,6 +5,9 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/_lib.sh"
 
+kill_stray_orphans 0 "CLEANUP PRE"
+install_stray_cleanup_trap
+
 BACKLOG_DIR="/Users/dysim/workspace/backlog"
 
 cd "$BACKLOG_DIR"

@@ -7,14 +7,92 @@ CODEX_BIN="/opt/homebrew/bin/codex"
 PYTHON_BIN="/Users/dysim/workspace/mycron/.venv/bin/python3"
 FLOW_ENGINE_FILE="/Users/dysim/.mycron/flow-engine"
 # Claude: "You've hit your limit" / "You've hit your session limit"
+#         / "You've hit your weekly limit" / "You've hit your 5-hour limit"
 # Codex: "You've hit your usage limit"
-LIMIT_MARKER_REGEX="You've hit your (usage |session )?limit"
+# 한도 종류가 계속 늘어나므로 수식어를 한 단어 와일드카드로 받는다.
+LIMIT_MARKER_REGEX="You've hit your ([a-z0-9-]+ )?limit"
 
 # LaunchAgent/mycron daemon environments are intentionally sparse on macOS.
 # Codex is installed under Homebrew and uses `#!/usr/bin/env node`, so node
 # must be discoverable through PATH even when the daemon starts with
 # `/usr/bin:/bin:/usr/sbin:/sbin`.
 export PATH="/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
+
+# claude/codex 의 Bash 툴은 자식을 별도 프로세스 그룹으로 띄운다. 그래서
+# mycron 이 타임아웃으로 killpg 를 보내도 그 자손들은 살아남아 PPID=1 고아가
+# 된다. 실제로 `xcodebuild -runFirstLaunch` 가 sudo/라이선스 입력을 기다리며
+# 며칠씩 쌓인 적이 있어, flow 스크립트가 직접 정리한다.
+STRAY_PROCESS_REGEX="${STRAY_PROCESS_REGEX:-xcodebuild -runFirstLaunch|simctl list devices}"
+STRAY_KILL_GRACE_SECONDS="${STRAY_KILL_GRACE_SECONDS:-2}"
+_STRAY_CLEANUP_DONE=0
+_STRAY_CLEANUP_SINCE=0
+
+# ps 의 etime("[[dd-]hh:]mm:ss") 을 초로 변환한다. macOS ps 에는 etimes 가 없다.
+etime_to_seconds() {
+    local etime="$1"
+    local days=0 rest parts
+
+    if [[ "$etime" == *-* ]]; then
+        days="${etime%%-*}"
+        rest="${etime#*-}"
+    else
+        rest="$etime"
+    fi
+
+    IFS=: read -r -a parts <<< "$rest"
+    case ${#parts[@]} in
+        3) printf '%s\n' $(( 10#$days * 86400 + 10#${parts[0]} * 3600 + 10#${parts[1]} * 60 + 10#${parts[2]} )) ;;
+        2) printf '%s\n' $(( 10#$days * 86400 + 10#${parts[0]} * 60 + 10#${parts[1]} )) ;;
+        *) return 1 ;;
+    esac
+}
+
+# STRAY_PROCESS_REGEX 에 걸리는 고아(PPID=1) 프로세스를 종료한다.
+# $1 이 주어지면 그 epoch 이후에 시작된 것만 대상으로 한다(0 이면 전부).
+# 부모가 살아있는 프로세스는 사용자가 직접 띄운 것일 수 있으므로 건드리지 않는다.
+kill_stray_orphans() {
+    local since_epoch="${1:-0}"
+    local label="${2:-CLEANUP}"
+    local now pid ppid etime cmd age started
+    local targets=()
+
+    now="$(date +%s)"
+
+    while read -r pid ppid etime cmd; do
+        [[ "$ppid" == "1" ]] || continue
+        age="$(etime_to_seconds "$etime")" || continue
+        started=$(( now - age ))
+        (( started >= since_epoch )) || continue
+
+        targets+=("$pid")
+        echo "[${label}] stray orphan pid=${pid} age=${age}s: ${cmd}" >&2
+    done < <(ps -eo pid=,ppid=,etime=,command= | grep -E "$STRAY_PROCESS_REGEX" | grep -v grep)
+
+    [[ ${#targets[@]} -eq 0 ]] && return 0
+
+    kill -TERM "${targets[@]}" 2>/dev/null || true
+    sleep "$STRAY_KILL_GRACE_SECONDS"
+    kill -KILL "${targets[@]}" 2>/dev/null || true
+
+    echo "[${label}] terminated ${#targets[@]} stray orphan(s)" >&2
+}
+
+# 종료 시 이번 실행 중에 생긴 고아를 정리하도록 trap 을 건다.
+# mycron 은 SIGKILL 전에 SIGTERM + 5초 유예를 주므로 그 안에 정리된다.
+_stray_cleanup_once() {
+    [[ "$_STRAY_CLEANUP_DONE" == "1" ]] && return 0
+    _STRAY_CLEANUP_DONE=1
+    kill_stray_orphans "$_STRAY_CLEANUP_SINCE"
+}
+
+install_stray_cleanup_trap() {
+    # trap 은 나중에 실행되므로 시작 시각을 전역에 둔다(local 은 그때 사라진다).
+    _STRAY_CLEANUP_SINCE="$(date +%s)"
+
+    trap '_stray_cleanup_once' EXIT
+    trap '_stray_cleanup_once; exit 143' TERM
+    trap '_stray_cleanup_once; exit 130' INT
+}
 
 flow_engine() {
     local engine="${FLOW_ENGINE:-}"

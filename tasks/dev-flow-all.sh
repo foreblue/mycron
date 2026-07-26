@@ -7,6 +7,11 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/_lib.sh"
 
+# 이전 실행이 타임아웃으로 죽으며 남긴 고아부터 치우고, 이번 실행분도
+# 종료 시 정리되도록 trap 을 건다.
+kill_stray_orphans 0 "CLEANUP PRE"
+install_stray_cleanup_trap
+
 WORKSPACE="/Users/dysim/workspace"
 NEEDS_HUMAN_LABEL="needs-human"
 QA_RECORD_LABEL="qa-record"
