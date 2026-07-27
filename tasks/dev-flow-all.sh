@@ -21,6 +21,9 @@ QA_ARTIFACT_BASE_URL_DEFAULT="https://artifacts.deepheart.duckdns.org"
 DEV_FLOW_ALL_OWNER="${DEV_FLOW_ALL_OWNER:-foreblue}"
 # backlog 는 plan-flow 허브, 나머지는 자율 개발 대상에서 뺀 리포.
 DEV_FLOW_ALL_EXCLUDED_REPOS="${DEV_FLOW_ALL_EXCLUDED_REPOS-restaurant-service backlog new-pension}"
+# 비어 있지 않으면 여기 적힌 리포만 처리한다. 한 리포의 이슈를 소진시킬 때 쓴다.
+# 제외 목록보다 우선하지는 않는다 — 둘 다 통과해야 처리 대상이 된다.
+DEV_FLOW_ALL_ONLY_REPOS="${DEV_FLOW_ALL_ONLY_REPOS:-}"
 QA_FAILURE_LABELS=(
     "qa-record"
     "qa-regression"
@@ -43,6 +46,23 @@ QA_ROOT_CANDIDATES=(
     "app"
     "apps/web"
 )
+
+# DEV_FLOW_ALL_ONLY_REPOS 가 설정돼 있는데 거기 없는 리포면 0(=대상 아님)을 낸다.
+is_not_allowlisted_repo() {
+    local repo="$1"
+    local allowed allowed_repos
+    local allowed_repo_list=()
+
+    [[ -z "$DEV_FLOW_ALL_ONLY_REPOS" ]] && return 1
+
+    allowed_repos="${DEV_FLOW_ALL_ONLY_REPOS//,/ }"
+    read -r -a allowed_repo_list <<< "$allowed_repos"
+    for allowed in "${allowed_repo_list[@]}"; do
+        [[ "$repo" == "$allowed" ]] && return 1
+    done
+
+    return 0
+}
 
 is_excluded_repo() {
     local repo="$1"
@@ -240,6 +260,14 @@ create_qa_failure_issue() {
     local label_args=()
     local label
 
+    # 소진 모드에서는 QA 실패도 이슈로 만들지 않는다. 이슈 집합은 줄기만 해야
+    # 하므로 실패 사실은 Telegram 과 콘솔 로그로만 알린다.
+    if [[ "${DEV_FLOW_NO_NEW_ISSUES:-0}" == "1" ]]; then
+        echo "[QA ISSUE SKIP] ${repo}:${root_label}: DEV_FLOW_NO_NEW_ISSUES=1 — 이슈 생성 생략 (exit ${qa_ec})"
+        send_telegram "⚠️ QA regression 실패 (${repo}:${root_label}) — 소진 모드라 이슈는 만들지 않았습니다. ${report_url:-리포트 없음}"
+        return 0
+    fi
+
     if ! command -v gh >/dev/null 2>&1; then
         echo "[QA WARN] ${repo}:${root_label}: gh not found; cannot create QA failure issue" >&2
         return 1
@@ -430,6 +458,11 @@ failed=0
 
 for repo in "${REPOS[@]}"; do
     repo_dir="${WORKSPACE}/${repo}"
+    if is_not_allowlisted_repo "$repo"; then
+        echo "[SKIP] ${repo}: not in DEV_FLOW_ALL_ONLY_REPOS"
+        continue
+    fi
+
     if is_excluded_repo "$repo"; then
         echo "[SKIP] ${repo}: excluded from dev-flow-all"
         continue
