@@ -100,7 +100,12 @@ def _execute_job(
         stderr=result.stderr,
     )
 
-    status = "SUCCESS" if result.success else f"FAILED (exit {result.exit_code})"
+    if result.success:
+        status = "SUCCESS"
+    elif result.is_alert:
+        status = "ALERT"
+    else:
+        status = f"FAILED (exit {result.exit_code})"
     logger.info("Job '%s' %s in %dms", job_name, status, result.duration_ms)
 
     notified = send(cfg.telegram, job_name, result, notify_on_success=notify_on_success)

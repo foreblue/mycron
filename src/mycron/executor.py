@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 MAX_OUTPUT_BYTES = 64 * 1024  # 64 KB
 DEFAULT_TIMEOUT_SECONDS = 3600
 TERMINATE_GRACE_SECONDS = 5
+# 작업이 정상 실행됐지만 사람이 봐야 할 상태(예: 디스크 부족)를 알릴 때 쓰는 종료 코드
+ALERT_EXIT_CODE = 10
 
 
 @dataclass
@@ -22,6 +24,10 @@ class ExecutionResult:
     @property
     def success(self) -> bool:
         return self.exit_code == 0
+
+    @property
+    def is_alert(self) -> bool:
+        return self.exit_code == ALERT_EXIT_CODE
 
 
 def run_command(command: str, timeout: float = DEFAULT_TIMEOUT_SECONDS) -> ExecutionResult:

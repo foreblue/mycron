@@ -83,6 +83,12 @@ def _build_message(job_name: str, result: ExecutionResult) -> str:
             f"  Status: SUCCESS (exit 0)",
             f"  Duration: {duration_s:.1f}s",
         ]
+    elif result.is_alert:
+        lines = [f'[mycron] ⚠️ Job "{job_name}" ALERT']
+        if result.stdout:
+            lines.append(result.stdout[:1000])
+        if result.stderr:
+            lines.append(f"  Stderr: {result.stderr[:500]}")
     else:
         lines = [
             f'[mycron] Job "{job_name}" FAILED',
@@ -92,5 +98,8 @@ def _build_message(job_name: str, result: ExecutionResult) -> str:
         if result.stderr:
             snippet = result.stderr[:500]
             lines.append(f"  Stderr: {snippet}")
+        elif result.stdout:
+            # stderr 가 비면 원인을 알 수 없으니 stdout 끝부분이라도 보여준다
+            lines.append(f"  Stdout: {result.stdout[-500:]}")
 
     return "\n".join(lines)

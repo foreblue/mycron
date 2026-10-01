@@ -7,7 +7,7 @@ from .config import load_config
 from . import db as database
 from . import daemon
 from . import launchd
-from .executor import DEFAULT_TIMEOUT_SECONDS, run_command
+from .executor import ALERT_EXIT_CODE, DEFAULT_TIMEOUT_SECONDS, run_command
 from .notifier import send as notify
 
 
@@ -238,7 +238,12 @@ def run(name):
         database.mark_log_notified(conn, log_id)
 
     duration_s = result.duration_ms / 1000
-    status = "성공" if result.success else f"실패 (exit {result.exit_code})"
+    if result.success:
+        status = "성공"
+    elif result.is_alert:
+        status = f"경고 (exit {ALERT_EXIT_CODE})"
+    else:
+        status = f"실패 (exit {result.exit_code})"
     click.echo(f"결과: {status} ({duration_s:.1f}s)")
 
     if result.stdout:
@@ -282,7 +287,12 @@ def logs(name, limit):
     click.echo(header)
     click.echo("-" * 65)
     for entry in entries:
-        status = "OK" if entry.exit_code == 0 else f"FAIL({entry.exit_code})"
+        if entry.exit_code == 0:
+            status = "OK"
+        elif entry.exit_code == ALERT_EXIT_CODE:
+            status = "ALERT"
+        else:
+            status = f"FAIL({entry.exit_code})"
         duration_s = entry.duration_ms / 1000
         notified = " [알림전송]" if entry.notified else ""
         job_col = f"[{entry.job_name}]" if not name else ""

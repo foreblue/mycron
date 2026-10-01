@@ -19,6 +19,11 @@ pipx로 설치된 경우 `mycron <command>`로 직접 사용 가능.
 - 커맨드에 Python 스크립트가 포함되면 `/opt/homebrew/bin/python3`의 절대경로를 사용한다
 - 스크립트 경로도 절대경로로 지정한다
 
+### 경고(ALERT) 종료 코드
+
+감시 작업이 "실행은 정상인데 사람이 봐야 할 상태"(예: 디스크 부족)를 알릴 때는 `exit 10` 으로 끝낸다.
+텔레그램에 FAILED 대신 `⚠️ ... ALERT` 와 stdout 내용이 전송되고, `mycron logs` 에는 `ALERT` 로 표시된다.
+
 ## 스케줄러 데몬 관리
 
 ```bash
