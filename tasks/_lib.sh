@@ -22,7 +22,8 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin:/usr/sbin:/s
 # mycron 이 타임아웃으로 killpg 를 보내도 그 자손들은 살아남아 PPID=1 고아가
 # 된다. 실제로 `xcodebuild -runFirstLaunch` 가 sudo/라이선스 입력을 기다리며
 # 며칠씩 쌓인 적이 있어, flow 스크립트가 직접 정리한다.
-STRAY_PROCESS_REGEX="${STRAY_PROCESS_REGEX:-xcodebuild -runFirstLaunch|simctl list devices}"
+# flutter_tester 는 `flutter test` 가 끊기면 남는다(spider 에서 27일짜리가 발견됨).
+STRAY_PROCESS_REGEX="${STRAY_PROCESS_REGEX:-xcodebuild -runFirstLaunch|simctl list devices|flutter_tester}"
 STRAY_KILL_GRACE_SECONDS="${STRAY_KILL_GRACE_SECONDS:-2}"
 _STRAY_CLEANUP_DONE=0
 _STRAY_CLEANUP_SINCE=0
@@ -49,10 +50,12 @@ etime_to_seconds() {
 
 # STRAY_PROCESS_REGEX 에 걸리는 고아(PPID=1) 프로세스를 종료한다.
 # $1 이 주어지면 그 epoch 이후에 시작된 것만 대상으로 한다(0 이면 전부).
+# $3 이 주어지면 그 초 이상 살아있는 것만 대상으로 한다(기본 0).
 # 부모가 살아있는 프로세스는 사용자가 직접 띄운 것일 수 있으므로 건드리지 않는다.
 kill_stray_orphans() {
     local since_epoch="${1:-0}"
     local label="${2:-CLEANUP}"
+    local min_age="${3:-0}"
     local now pid ppid etime cmd age started
     local targets=()
 
@@ -61,6 +64,7 @@ kill_stray_orphans() {
     while read -r pid ppid etime cmd; do
         [[ "$ppid" == "1" ]] || continue
         age="$(etime_to_seconds "$etime")" || continue
+        (( age >= min_age )) || continue
         started=$(( now - age ))
         (( started >= since_epoch )) || continue
 
