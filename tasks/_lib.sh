@@ -145,7 +145,7 @@ Batch mode override: DEV_FLOW_DEPLOY=0 is set. Process eligible issues through m
             DEV_FLOW_DEPLOY=0 DEV_FLOW_NO_NEW_ISSUES="${DEV_FLOW_NO_NEW_ISSUES:-0}" \
                 "$CODEX_BIN" -a never exec \
                 --dangerously-bypass-approvals-and-sandbox \
-                "Use \$dev-flow. Process all eligible open issues. Exclude issues labeled needs-human or qa-record. Treat qa-record issues as QA evidence/result records, not development work. If an issue requires human input or manual intervention, add the needs-human label, comment with the blocker, and skip it until a human removes that label. DEV_FLOW_DEPLOY=0 is set for this batch run: do not run deploy.sh inside dev-flow. dev-flow-all will run QA and deploy only after QA passes.$(drain_mode_prompt)"
+                "Use \$dev-flow. Process all eligible open issues. Exclude issues labeled needs-human, qa-record, or inbox-managed (the inbox-flow batch runs those by issue number). Treat qa-record issues as QA evidence/result records, not development work. If an issue requires human input or manual intervention, add the needs-human label, comment with the blocker, and skip it until a human removes that label. DEV_FLOW_DEPLOY=0 is set for this batch run: do not run deploy.sh inside dev-flow. dev-flow-all will run QA and deploy only after QA passes.$(drain_mode_prompt)"
             ;;
         *)
             echo "[ERROR] unknown FLOW_ENGINE: $(flow_engine)" >&2

@@ -15,12 +15,14 @@ install_stray_cleanup_trap
 WORKSPACE="/Users/dysim/workspace"
 NEEDS_HUMAN_LABEL="needs-human"
 QA_RECORD_LABEL="qa-record"
+# inbox-flow 가 이슈 번호를 넘겨 직접 돌리는 이슈. 여기서 또 잡으면 같은 이슈를 두 배치가 처리한다.
+INBOX_MANAGED_LABEL="inbox-managed"
 QA_FLOW_GATE="${QA_FLOW_GATE:-/Users/dysim/mylogs/codex/skills/qa-flow/scripts/qa-regression-gate.sh}"
 QA_ARTIFACT_ROOT_DEFAULT="${WORKSPACE}/artifacts"
 QA_ARTIFACT_BASE_URL_DEFAULT="https://artifacts.deepheart.duckdns.org"
 DEV_FLOW_ALL_OWNER="${DEV_FLOW_ALL_OWNER:-foreblue}"
-# backlog 는 plan-flow 허브, 나머지는 자율 개발 대상에서 뺀 리포.
-DEV_FLOW_ALL_EXCLUDED_REPOS="${DEV_FLOW_ALL_EXCLUDED_REPOS-restaurant-service backlog new-pension}"
+# backlog 는 plan-flow 허브, deepheart-dev 는 inbox-flow 허브, 나머지는 자율 개발 대상에서 뺀 리포.
+DEV_FLOW_ALL_EXCLUDED_REPOS="${DEV_FLOW_ALL_EXCLUDED_REPOS-restaurant-service backlog deepheart-dev new-pension}"
 # 비어 있지 않으면 여기 적힌 리포만 처리한다. 한 리포의 이슈를 소진시킬 때 쓴다.
 # 제외 목록보다 우선하지는 않는다 — 둘 다 통과해야 처리 대상이 된다.
 DEV_FLOW_ALL_ONLY_REPOS="${DEV_FLOW_ALL_ONLY_REPOS:-}"
@@ -115,7 +117,7 @@ has_eligible_issue() {
         --state open \
         --limit 1000 \
         --json labels \
-        --jq "map(select(([.labels[].name] | index(\"${NEEDS_HUMAN_LABEL}\") | not) and ([.labels[].name] | index(\"${QA_RECORD_LABEL}\") | not))) | length" 2>/dev/null); then
+        --jq "map(select(([.labels[].name] | index(\"${NEEDS_HUMAN_LABEL}\") | not) and ([.labels[].name] | index(\"${QA_RECORD_LABEL}\") | not) and ([.labels[].name] | index(\"${INBOX_MANAGED_LABEL}\") | not))) | length" 2>/dev/null); then
         echo "[WARN] failed to fetch issues; running dev-flow without pre-filter" >&2
         return 0
     fi
@@ -479,7 +481,7 @@ for repo in "${REPOS[@]}"; do
 
     cd "$repo_dir"
     if ! has_eligible_issue; then
-        echo "[SKIP] ${repo}: no open issues without ${NEEDS_HUMAN_LABEL}/${QA_RECORD_LABEL}"
+        echo "[SKIP] ${repo}: no open issues without ${NEEDS_HUMAN_LABEL}/${QA_RECORD_LABEL}/${INBOX_MANAGED_LABEL}"
         echo ""
         continue
     fi
