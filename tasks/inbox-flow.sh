@@ -211,6 +211,24 @@ run_inbox_dev_flow() {
 Batch mode override (inbox-flow): DEV_FLOW_DEPLOY=0, DEV_FLOW_NOTIFY=none and DEV_FLOW_REQUIRE_APPROVE=1 are set. Do not run deploy.sh. Do not send any Telegram messages — inbox-flow sends the completion notice.${merge_rule} Never merge without a review that returned VERDICT: APPROVE: if the 3rd review still requests changes, skip consensus and handle it as ABORT (PR stays open, needs-human on the issue, unresolved findings commented on both). The PR body must contain \"Closes #${issue}\". If analysis ends in ACTION: COMMENT, always close the issue after commenting — inbox-flow reads an open issue with no PR and no needs-human label as a failure." </dev/null
 }
 
+# 머지는 원격에서만 일어나므로 원래 체크아웃의 기본 브랜치를 원격에 맞춘다.
+# 기본 브랜치에 있고 추적 파일 변경이 없을 때만 fast-forward 한다. 추적 안 되는 파일은 git 이 덮어쓰기 전에 멈추므로 보지 않는다.
+sync_local_default() {
+    local repo="$1" dir="$2" base current
+
+    base=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name) || return 0
+    current=$(git -C "$dir" branch --show-current)
+    if [[ "$current" != "$base" ]]; then
+        echo "[SYNC SKIP] ${repo}: 현재 브랜치 ${current:-detached} (${base} 아님)"
+    elif [[ -n "$(git -C "$dir" status --porcelain --untracked-files=no)" ]]; then
+        echo "[SYNC SKIP] ${repo}: 커밋 안 된 변경 있음"
+    elif git -C "$dir" pull -q --ff-only origin "$base"; then
+        echo "[SYNC] ${repo}: ${base} → $(git -C "$dir" rev-parse --short HEAD)"
+    else
+        echo "[SYNC SKIP] ${repo}: ${base} fast-forward 불가"
+    fi
+}
+
 finish_dispatched() {
     local n="$1" headline="$2" detail="$3" title="$4"
 
@@ -299,6 +317,7 @@ ${reason}
 ${copy_url}"
         fi
     elif [[ "$pr_state" == "MERGED" ]]; then
+        sync_local_default "$target_repo" "$repo_dir"
         finish_dispatched "$n" "✅ 머지 완료" "PR: ${pr_url}" "$title"
     elif [[ "$pr_state" == "OPEN" ]] && has_label "$pr_labels" "$LABEL_READY"; then
         finish_dispatched "$n" "✅ 리뷰 통과, 머지 대기" "PR: ${pr_url}" "$title"
