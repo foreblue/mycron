@@ -2,7 +2,7 @@
 # 요청 허브(deepheart-dev) 이슈를 처리한다.
 #   1) /inbox-flow 로 새 이슈를 분류한다 — 코멘트 답변 / 대상 리포로 디스패치 / 사람 확인 요청
 #   2) dispatched 이슈마다 대상 리포에서 /dev-flow <복사본 번호> 를 돌리고 결과를 허브 이슈에 반영한다
-#   3) 끝난 건만 Telegram 으로 알린다 (dev-flow 자체 알림은 DEV_FLOW_NOTIFY=none 으로 끈다)
+#   3) 끝난 건과 리뷰 미통과·확인 필요만 Telegram 으로 알린다 (dev-flow 자체 알림은 DEV_FLOW_NOTIFY=none 으로 끈다)
 # 판단은 Claude 가, 흐름(cd·루프·결과 판정·알림)은 이 스크립트가 맡는다.
 # 요청 처리는 Claude 로 고정한다 — ~/.mycron/flow-engine 은 보지 않는다.
 set -uo pipefail
@@ -15,8 +15,8 @@ HUB_REPO="${INBOX_HUB_REPO:-foreblue/deepheart-dev}"
 HUB_OWNER="${HUB_REPO%%/*}"
 HUB_NAME="${HUB_REPO#*/}"
 HUB_DIR="${INBOX_HUB_DIR:-${WORKSPACE}/${HUB_NAME}}"
-# 1 이면 리뷰를 통과해도 머지하지 않고 PR 에 ready-to-merge 라벨만 단다. 배포는 어느 쪽이든 하지 않는다.
-INBOX_NO_MERGE="${INBOX_NO_MERGE:-1}"
+# 기본은 리뷰 APPROVE 시 머지. 1 이면 머지하지 않고 PR 에 ready-to-merge 라벨만 단다. 배포는 어느 쪽이든 하지 않는다.
+INBOX_NO_MERGE="${INBOX_NO_MERGE:-0}"
 LOCK_FILE="${HOME}/.mycron/inbox-flow.lock"
 
 LABEL_IN_PROGRESS="in-progress"
@@ -191,19 +191,24 @@ pr_info() {
     gh pr view "$2" -R "$1" --json state,labels,url --jq '[.state, ([.labels[].name] | join(",")), .url] | join("\u001f")'
 }
 
+# 이슈 마지막 댓글의 앞부분 — dev-flow 가 needs-human 을 붙이며 남긴 사유를 알림에 싣는다.
+last_comment_excerpt() {
+    gh issue view "$2" -R "$1" --json comments --jq '.comments | last | .body // "" | .[:500]'
+}
+
 run_inbox_dev_flow() {
     local issue="$1" merge_rule
 
     if [[ "$INBOX_NO_MERGE" == "1" ]]; then
-        merge_rule=" DEV_FLOW_NO_MERGE=1 is set: never run gh pr merge. When review approves (or consensus decides MERGE), add the ${LABEL_READY} label to the PR and leave it open for a human to merge."
+        merge_rule=" DEV_FLOW_NO_MERGE=1 is set: never run gh pr merge. When review approves, add the ${LABEL_READY} label to the PR and leave it open for a human to merge."
     else
-        merge_rule=" Merge the PR when review approves, as usual."
+        merge_rule=" Merge the PR when review approves."
     fi
 
-    DEV_FLOW_DEPLOY=0 DEV_FLOW_NOTIFY=none DEV_FLOW_NO_MERGE="$INBOX_NO_MERGE" \
+    DEV_FLOW_DEPLOY=0 DEV_FLOW_NOTIFY=none DEV_FLOW_NO_MERGE="$INBOX_NO_MERGE" DEV_FLOW_REQUIRE_APPROVE=1 \
         "$CLAUDE_BIN" --dangerously-skip-permissions -p "/dev-flow ${issue}
 
-Batch mode override (inbox-flow): DEV_FLOW_DEPLOY=0 and DEV_FLOW_NOTIFY=none are set. Do not run deploy.sh. Do not send any Telegram messages — inbox-flow sends the completion notice.${merge_rule} The PR body must contain \"Closes #${issue}\". If analysis ends in ACTION: COMMENT, always close the issue after commenting — inbox-flow reads an open issue with no PR and no needs-human label as a failure." </dev/null
+Batch mode override (inbox-flow): DEV_FLOW_DEPLOY=0, DEV_FLOW_NOTIFY=none and DEV_FLOW_REQUIRE_APPROVE=1 are set. Do not run deploy.sh. Do not send any Telegram messages — inbox-flow sends the completion notice.${merge_rule} Never merge without a review that returned VERDICT: APPROVE: if the 3rd review still requests changes, skip consensus and handle it as ABORT (PR stays open, needs-human on the issue, unresolved findings commented on both). The PR body must contain \"Closes #${issue}\". If analysis ends in ACTION: COMMENT, always close the issue after commenting — inbox-flow reads an open issue with no PR and no needs-human label as a failure." </dev/null
 }
 
 finish_dispatched() {
@@ -223,7 +228,7 @@ ${detail}"
 
 process_dispatched() {
     local n="$1" title labels url ref target_repo target_n repo_name repo_dir
-    local copy_state copy_labels copy_url pr pr_state="" pr_labels="" pr_url="" output
+    local copy_state copy_labels copy_url pr pr_state="" pr_labels="" pr_url="" output reason
 
     IFS="$SEP" read -r title labels url < <(hub_issue_info "$n")
 
@@ -268,12 +273,31 @@ process_dispatched() {
     fi
 
     if has_label "$copy_labels" "$LABEL_NEEDS_HUMAN"; then
-        echo "[NEEDS-HUMAN] #${n} → ${ref}"
-        hub_comment "$n" "## 🙋 개발 중 확인 필요
-${copy_url} 에서 사람 확인을 요청했습니다.${pr_url:+ (PR: ${pr_url})}
+        reason="$(last_comment_excerpt "$target_repo" "$target_n")"
+        # PR 이 열린 채 needs-human 이면 3차 리뷰까지 APPROVE 를 못 받아 멈춘 것이다 (DEV_FLOW_REQUIRE_APPROVE=1).
+        if [[ "$pr_state" == "OPEN" ]]; then
+            echo "[REVIEW-FAILED] #${n} → ${ref}"
+            hub_comment "$n" "## ⛔ 리뷰 미통과 — 머지하지 않음
+PR: ${pr_url}
+리뷰 3차까지 통과하지 못해 PR 을 열어 두었습니다. 미해결 사항은 PR 과 ${copy_url} 에 있습니다.
+그 이슈에서 조치하거나 답한 뒤 \`${LABEL_NEEDS_HUMAN}\` 라벨을 떼면 다음 배치 실행에서 이어서 진행합니다."
+            notify "⛔ 리뷰 미통과: #${n} ${title}
+PR: ${pr_url}
+
+${reason}
+
+${copy_url} 에서 확인 후 ${LABEL_NEEDS_HUMAN} 라벨을 떼면 재개"
+        else
+            echo "[NEEDS-HUMAN] #${n} → ${ref}"
+            hub_comment "$n" "## 🙋 개발 중 확인 필요
+${copy_url} 에서 사람 확인을 요청했습니다.
 그 이슈에서 답하고 \`${LABEL_NEEDS_HUMAN}\` 라벨을 떼면 다음 배치 실행에서 이어서 진행합니다."
-        notify "🙋 개발 중 확인 필요: #${n} ${title}
+            notify "🙋 개발 중 확인 필요: #${n} ${title}
+
+${reason}
+
 ${copy_url}"
+        fi
     elif [[ "$pr_state" == "MERGED" ]]; then
         finish_dispatched "$n" "✅ 머지 완료" "PR: ${pr_url}" "$title"
     elif [[ "$pr_state" == "OPEN" ]] && has_label "$pr_labels" "$LABEL_READY"; then
@@ -281,7 +305,7 @@ ${copy_url}"
     elif [[ "$copy_state" == "CLOSED" ]]; then
         finish_dispatched "$n" "💬 개발 없이 종료" "대상 이슈: ${copy_url}" "$title"
     else
-        mark_failed "$n" "dev-flow 가 끝났지만 머지/머지 대기 PR 도, 사람 확인 요청도 없습니다. 대상 이슈: ${copy_url}${pr_url:+, PR: ${pr_url}}" "$title" "$url"
+        mark_failed "$n" "dev-flow 가 끝났지만 머지된 PR 도, 사람 확인 요청도 없습니다. 대상 이슈: ${copy_url}${pr_url:+, PR: ${pr_url}}" "$title" "$url"
     fi
 }
 
