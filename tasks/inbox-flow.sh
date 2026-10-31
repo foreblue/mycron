@@ -174,16 +174,15 @@ copy_issue_info() {
     gh issue view "$2" -R "$1" --json state,labels --jq '[.state, ([.labels[].name] | join(","))] | join("\u001f")'
 }
 
-# 복사본 이슈를 닫게 될 PR 번호 (본문 Closes #n 기준). 없으면 dev-flow 규칙의 issue-<n> 브랜치로 찾는다.
+# dev-flow 가 복사본 이슈로 연 PR 번호 — dev-flow 규칙의 issue-<n> 브랜치로 찾는다.
+# 공개 리포에서는 남도 포크에서 같은 이름의 브랜치나 "Closes #n" 으로 PR 을 열 수 있으므로,
+# 같은 리포 브랜치에서 허브 소유자가 연 PR 만 센다.
 linked_pr() {
-    local repo="$1" n="$2" pr
+    local repo="$1" n="$2"
 
-    pr=$(gh issue view "$n" -R "$repo" --json closedByPullRequestsReferences \
-        --jq '.closedByPullRequestsReferences | last | .number // empty')
-    if [[ -z "$pr" ]]; then
-        pr=$(gh pr list -R "$repo" --head "issue-${n}" --state all --limit 1 --json number --jq '.[0].number // empty')
-    fi
-    printf '%s' "$pr"
+    gh pr list -R "$repo" --head "issue-${n}" --state all --limit 20 \
+        --json number,author,isCrossRepository \
+        --jq "[.[] | select((.isCrossRepository | not) and .author.login == \"${HUB_OWNER}\")] | .[0].number // empty"
 }
 
 # PR 의 "STATE␟라벨,목록␟URL".
@@ -191,9 +190,11 @@ pr_info() {
     gh pr view "$2" -R "$1" --json state,labels,url --jq '[.state, ([.labels[].name] | join(",")), .url] | join("\u001f")'
 }
 
-# 이슈 마지막 댓글의 앞부분 — dev-flow 가 needs-human 을 붙이며 남긴 사유를 알림에 싣는다.
+# 허브 소유자가 단 마지막 댓글의 앞부분 — dev-flow 가 needs-human 을 붙이며 남긴 사유를 알림에 싣는다.
+# 작성자를 거르지 않으면 공개 리포에서 남이 그 사이에 단 글이 Telegram 알림으로 온다.
 last_comment_excerpt() {
-    gh issue view "$2" -R "$1" --json comments --jq '.comments | last | .body // "" | .[:500]'
+    gh issue view "$2" -R "$1" --json comments \
+        --jq "[.comments[] | select(.author.login == \"${HUB_OWNER}\")] | last | .body // \"\" | .[:500]"
 }
 
 run_inbox_dev_flow() {
