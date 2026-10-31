@@ -3,9 +3,7 @@
 # source 해서 사용한다: source "$(dirname "$0")/_lib.sh"
 
 CLAUDE_BIN="/Users/dysim/.local/bin/claude"
-CODEX_BIN="/opt/homebrew/bin/codex"
 PYTHON_BIN="/Users/dysim/workspace/mycron/.venv/bin/python3"
-FLOW_ENGINE_FILE="/Users/dysim/.mycron/flow-engine"
 # Claude: "You've hit your limit" / "You've hit your session limit"
 #         / "You've hit your weekly limit" / "You've hit your 5-hour limit"
 # Codex: "You've hit your usage limit"
@@ -13,9 +11,8 @@ FLOW_ENGINE_FILE="/Users/dysim/.mycron/flow-engine"
 LIMIT_MARKER_REGEX="You've hit your ([a-z0-9-]+ )?limit"
 
 # LaunchAgent/mycron daemon environments are intentionally sparse on macOS.
-# Codex is installed under Homebrew and uses `#!/usr/bin/env node`, so node
-# must be discoverable through PATH even when the daemon starts with
-# `/usr/bin:/bin:/usr/sbin:/sbin`.
+# gh and other Homebrew tools must be discoverable through PATH even when the
+# daemon starts with `/usr/bin:/bin:/usr/sbin:/sbin`.
 export PATH="/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
 
 # claude/codex 의 Bash 툴은 자식을 별도 프로세스 그룹으로 띄운다. 그래서
@@ -96,31 +93,6 @@ install_stray_cleanup_trap() {
     trap '_stray_cleanup_once' EXIT
     trap '_stray_cleanup_once; exit 143' TERM
     trap '_stray_cleanup_once; exit 130' INT
-}
-
-flow_engine() {
-    local engine="${FLOW_ENGINE:-}"
-    if [[ -z "$engine" && -f "$FLOW_ENGINE_FILE" ]]; then
-        engine="$(tr -d '[:space:]' < "$FLOW_ENGINE_FILE")"
-    fi
-    printf '%s\n' "${engine:-codex}"
-}
-
-run_plan_flow() {
-    case "$(flow_engine)" in
-        claude)
-            "$CLAUDE_BIN" --dangerously-skip-permissions -p "/plan-flow"
-            ;;
-        codex)
-            "$CODEX_BIN" -a never exec \
-                --dangerously-bypass-approvals-and-sandbox \
-                "Use \$plan-flow. Process all eligible open backlog issues."
-            ;;
-        *)
-            echo "[ERROR] unknown FLOW_ENGINE: $(flow_engine)" >&2
-            return 2
-            ;;
-    esac
 }
 
 # stdin 이 Claude/Codex 사용량 한도 메시지를 포함하는지 검사한다.

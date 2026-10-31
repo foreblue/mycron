@@ -4,7 +4,7 @@
 #   2) dispatched 이슈마다 대상 리포에서 /dev-flow <복사본 번호> 를 돌리고 결과를 허브 이슈에 반영한다
 #   3) 끝난 건과 리뷰 미통과·확인 필요만 Telegram 으로 알린다 (dev-flow 자체 알림은 DEV_FLOW_NOTIFY=none 으로 끈다)
 # 판단은 Claude 가, 흐름(cd·루프·결과 판정·알림)은 이 스크립트가 맡는다.
-# 요청 처리는 Claude 로 고정한다 — ~/.mycron/flow-engine 은 보지 않는다.
+# 요청 처리는 Claude 로 고정한다.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
