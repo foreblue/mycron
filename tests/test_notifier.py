@@ -40,6 +40,12 @@ class BuildMessageTest(unittest.TestCase):
         self.assertIn("Stderr: boom", message)
         self.assertNotIn("noise", message)
 
+    def test_failure_with_long_stderr_keeps_tail(self) -> None:
+        traceback = "Traceback (most recent call last):\n" + "  frame\n" * 100 + "TimeoutExpired: docker ps"
+        message = _build_message("job", _result(1, stderr=traceback))
+
+        self.assertTrue(message.endswith("TimeoutExpired: docker ps"))
+
 
 if __name__ == "__main__":
     unittest.main()

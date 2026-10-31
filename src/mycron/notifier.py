@@ -96,7 +96,8 @@ def _build_message(job_name: str, result: ExecutionResult) -> str:
             f"  Duration: {duration_s:.1f}s",
         ]
         if result.stderr:
-            snippet = result.stderr[:500]
+            # traceback 은 마지막 줄이 실제 예외라 끝부분을 보여준다
+            snippet = result.stderr[-500:]
             lines.append(f"  Stderr: {snippet}")
         elif result.stdout:
             # stderr 가 비면 원인을 알 수 없으니 stdout 끝부분이라도 보여준다
