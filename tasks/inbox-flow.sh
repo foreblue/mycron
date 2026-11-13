@@ -143,7 +143,7 @@ classify_new_issues() {
     fi
 
     echo "[CLASSIFY] ${#numbers[@]}건: ${numbers[*]}"
-    output=$(cd "$HUB_DIR" && "$CLAUDE_BIN" --dangerously-skip-permissions -p "/inbox-flow
+    output=$(cd "$HUB_DIR" && "$CLAUDE_BIN" --model "$CLAUDE_MODEL" --dangerously-skip-permissions -p "/inbox-flow
 
 Batch mode (inbox-flow.sh): process only these hub issues, in this order: ${numbers[*]}. Do not send any Telegram messages. Do not run /dev-flow and do not modify code in any repo — only classify, comment, and dispatch as the skill describes." </dev/null 2>&1)
     printf '%s\n' "$output"
@@ -207,7 +207,7 @@ run_inbox_dev_flow() {
     fi
 
     DEV_FLOW_DEPLOY=0 DEV_FLOW_NOTIFY=none DEV_FLOW_NO_MERGE="$INBOX_NO_MERGE" DEV_FLOW_REQUIRE_APPROVE=1 \
-        "$CLAUDE_BIN" --dangerously-skip-permissions -p "/dev-flow ${issue}
+        "$CLAUDE_BIN" --model "$CLAUDE_MODEL" --dangerously-skip-permissions -p "/dev-flow ${issue}
 
 Batch mode override (inbox-flow): DEV_FLOW_DEPLOY=0, DEV_FLOW_NOTIFY=none and DEV_FLOW_REQUIRE_APPROVE=1 are set. Do not run deploy.sh. Do not send any Telegram messages — inbox-flow sends the completion notice.${merge_rule} Never merge without a review that returned VERDICT: APPROVE: if the 3rd review still requests changes, skip consensus and handle it as ABORT (PR stays open, needs-human on the issue, unresolved findings commented on both). The PR body must contain \"Closes #${issue}\". If analysis ends in ACTION: COMMENT, always close the issue after commenting — inbox-flow reads an open issue with no PR and no needs-human label as a failure." </dev/null
 }

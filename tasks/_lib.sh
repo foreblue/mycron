@@ -3,6 +3,7 @@
 # source 해서 사용한다: source "$(dirname "$0")/_lib.sh"
 
 CLAUDE_BIN="/Users/dysim/.local/bin/claude"
+CLAUDE_MODEL="claude-opus-5-5"   # 배치 claude 호출 모델(서브에이전트도 따라감)
 PYTHON_BIN="/Users/dysim/workspace/mycron/.venv/bin/python3"
 # Claude: "You've hit your limit" / "You've hit your session limit"
 #         / "You've hit your weekly limit" / "You've hit your 5-hour limit"
