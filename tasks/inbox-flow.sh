@@ -206,7 +206,9 @@ run_inbox_dev_flow() {
         merge_rule=" Merge the PR when review approves."
     fi
 
-    DEV_FLOW_DEPLOY=0 DEV_FLOW_NOTIFY=none DEV_FLOW_NO_MERGE="$INBOX_NO_MERGE" DEV_FLOW_REQUIRE_APPROVE=1 \
+    # claude -p 는 턴이 끝난 뒤 백그라운드 서브에이전트를 10분만 기다리고 끊는다. dev-flow 가 분석 에이전트를
+    # 백그라운드로 띄우고 턴을 끝내면 PR 없이 끝난다(2026-11-15 something-new#32). 끝날 때까지 기다리게 한다.
+    CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 DEV_FLOW_DEPLOY=0 DEV_FLOW_NOTIFY=none DEV_FLOW_NO_MERGE="$INBOX_NO_MERGE" DEV_FLOW_REQUIRE_APPROVE=1 \
         "$CLAUDE_BIN" --model "$CLAUDE_MODEL" --dangerously-skip-permissions -p "/dev-flow ${issue}
 
 Batch mode override (inbox-flow): DEV_FLOW_DEPLOY=0, DEV_FLOW_NOTIFY=none and DEV_FLOW_REQUIRE_APPROVE=1 are set. Do not run deploy.sh. Do not send any Telegram messages — inbox-flow sends the completion notice.${merge_rule} Never merge without a review that returned VERDICT: APPROVE: if the 3rd review still requests changes, skip consensus and handle it as ABORT (PR stays open, needs-human on the issue, unresolved findings commented on both). The PR body must contain \"Closes #${issue}\". If analysis ends in ACTION: COMMENT, always close the issue after commenting — inbox-flow reads an open issue with no PR and no needs-human label as a failure." </dev/null
