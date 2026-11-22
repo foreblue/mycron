@@ -130,8 +130,8 @@ d = json.loads((run / 'ideas.json').read_text())
 REPOS = {'freecell': 'FreeCell', 'spider': '스파이더', 'solitaire': '클론다이크', 'deepheart-marketing': '마케팅 도구'}
 LANES = {'유입', '완성도', '재방문'}
 WHERE = {'store': '스토어 글 · 검색어 — 그 저장소 main의 `store/`',
-         'main': '지금 앱(Flutter 1.x, 가지 main) — 고침 · 측정만',
-         'godot-2.0': '2.0 판(가지 `godot-2.0`) — dev-flow가 못 다루는 가지라 「한다」면 `for-2.0`으로 닫혀 2.0을 짓는 쪽이 가져간다',
+         'main': 'FreeCell 안에 얼려 둔 지금 화면(Flutter 1.x) — 고침 · 측정만 (스파이더 · 클론다이크는 1.x가 없다)',
+         'godot-2.0': '2.0 판 코드 · 공통 코어 — 「한다」면 `for-2.0`으로 닫히고 심개발 봇이 다음 2.0.x 고침판에 싣는다',
          'switch': '2.0의 `site/switches.json` 값만',
          'marketing': 'deepheart-marketing 도구 · 보고'}
 EFFORT = {'스위치', '작다', '중간', '크다'}
