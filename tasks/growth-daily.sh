@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 카드 3종 개편(11-16 ~ 12-13)의 매일 아이디어 배치.
 #   1) deepheart-marketing/tool/funnel_report.py --json 으로 어제까지의 숫자를 읽는다 — 못 읽으면 텔레그램 「숫자 없음」만
-#   2) Claude 가 deepheart-marketing/growth-daily.md 순서대로 아이디어를 RUN_DIR/ideas.json 에 쓴다 (이슈 · 알림 · 커밋은 하지 않는다)
+#   2) 에이전트(Claude, 못 쓰면 codex — _lib.sh 의 run_agent)가 deepheart-marketing/growth-daily.md 순서대로 아이디어를 RUN_DIR/ideas.json 에 쓴다 (이슈 · 알림 · 커밋은 하지 않는다)
 #   3) 이 스크립트가 아이디어마다 foreblue/deepheart-dev 에 growth + needs-human 이슈를 올리고 텔레그램 한 통을 보낸다
 # needs-human 이 붙은 이슈는 inbox-flow 가 가져가지 않는다. 채널 주인이 「한다」로 답하고 라벨을 떼면 그때 개발로 넘어간다.
 #
@@ -19,7 +19,7 @@ export LANG=ko_KR.UTF-8
 export PATH="/Users/dysim/.local/bin:${PATH}"
 
 HUB_REPO="${GROWTH_HUB_REPO:-foreblue/deepheart-dev}"
-MKT_DIR="/Users/dysim/workspace/deepheart-marketing"
+MKT_DIR="${GROWTH_MKT_DIR:-/Users/dysim/workspace/deepheart-marketing}"
 PY="/opt/homebrew/bin/python3"   # funnel_report.py 와 같은 파이썬
 DRY="${GROWTH_DRY_RUN:-0}"
 [[ "${1:-}" == "--dry-run" ]] && DRY=1
@@ -91,7 +91,7 @@ ${problem}"
     exit 0
 fi
 
-# ──────────────────────────── 2) 아이디어 (Claude) ────────────────────────────
+# ──────────────────────────── 2) 아이디어 (에이전트) ────────────────────────────
 
 # 허락은 프롬프트에 직접 적는다 — 파일 속 글은 사람의 지시로 읽히지 않는다(morning.sh 와 같다). 큰따옴표를 프롬프트 안에 쓰지 않는다.
 prompt="오늘은 $(date '+%Y-%m-%d %H:%M %Z')이고, 카드 3종(FreeCell · 스파이더 · 클론다이크) 매일 아이디어 배치 차례다. ${MKT_DIR}/growth-daily.md를 읽고 그 순서를 한 번 돌아라. 사람은 자리에 없다 — 묻지 말고, 망설여지면 내지 말고 skipped에 적어라.
@@ -107,14 +107,15 @@ RUN_DIR=${RUN_DIR}
 텔레그램, 커밋, 푸시, 업로드, 앱 제출, 계정 · 콘솔 작업은 허락하지 않는다."
 
 log="$RUN_DIR/agent.log"
-(cd "$MKT_DIR" && "$CLAUDE_BIN" --model "$CLAUDE_MODEL" --dangerously-skip-permissions -p "$prompt" </dev/null >"$log" 2>&1)
-rc=$?
-if claude_hit_limit <"$log"; then
-    tell "💡 growth ${DAY} — Claude 사용량 한도로 멈췄다 ($(extract_limit_reset <"$log"))"
+# Claude 를 먼저 쓰고, 못 쓰면 codex 가 같은 프롬프트로 다시 돈다.
+run_agent "$MKT_DIR" "$prompt" >"$log" 2>&1
+echo "[AGENT] ${AGENT_NOTE}"
+if agent_blocked; then
+    tell "💡 growth ${DAY} — 에이전트를 돌리지 못해 멈췄다 (${AGENT_NOTE})"
     exit 0
 fi
 if [[ ! -s "$RUN_DIR/ideas.json" ]]; then
-    tell "💡 growth ${DAY} — 아이디어 파일이 없다 (에이전트 종료 ${rc}) · 로그 ${log}"
+    tell "💡 growth ${DAY} — 아이디어 파일이 없다 (${AGENT_NOTE}) · 로그 ${log}"
     exit 0
 fi
 

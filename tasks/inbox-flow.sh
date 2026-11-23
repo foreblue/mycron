@@ -3,14 +3,15 @@
 #   1) /inbox-flow 로 새 이슈를 분류한다 — 코멘트 답변 / 대상 리포로 디스패치 / 사람 확인 요청
 #   2) dispatched 이슈마다 대상 리포에서 /dev-flow <복사본 번호> 를 돌리고 결과를 허브 이슈에 반영한다
 #   3) 끝난 건과 리뷰 미통과·확인 필요만 Telegram 으로 알린다 (dev-flow 자체 알림은 DEV_FLOW_NOTIFY=none 으로 끈다)
-# 판단은 Claude 가, 흐름(cd·루프·결과 판정·알림)은 이 스크립트가 맡는다.
-# 요청 처리는 Claude 로 고정한다.
+# 판단은 에이전트가, 흐름(cd·루프·결과 판정·알림)은 이 스크립트가 맡는다.
+# 에이전트는 Claude 를 먼저 쓰고, Claude 를 못 쓰면(없음 · 로그인 풀림 · 사용량 한도 · 비정상 종료) codex 가
+# 같은 커맨드 파일을 펼쳐 받아 이어서 한다 (_lib.sh 의 run_command_agent).
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/_lib.sh"
 
-WORKSPACE="/Users/dysim/workspace"
+WORKSPACE="${INBOX_WORKSPACE:-/Users/dysim/workspace}"
 HUB_REPO="${INBOX_HUB_REPO:-foreblue/deepheart-dev}"
 HUB_OWNER="${HUB_REPO%%/*}"
 HUB_NAME="${HUB_REPO#*/}"
@@ -69,12 +70,12 @@ hub_issue_info() {
         --jq '[.title, ([.labels[].name] | join(",")), .url] | join("\u001f")'
 }
 
-stop_if_limit() {
-    local reset_info
-
-    claude_hit_limit <<<"$1" || return 0
-    reset_info=$(extract_limit_reset <<<"$1")
-    send_telegram "⚠️ inbox-flow 중단 ($2 중): Claude 사용량 한도 도달 (${reset_info:-reset 시각 미상})"
+# 방금 run_command_agent 에서 Claude 도 codex 도 일을 맡지 못했으면(없음 · 로그인 풀림 · 사용량 한도 · 시작하자마자 종료) 멈춘다.
+# 이슈를 failed 로 찍지 않으므로 다음 실행이 다시 시도한다.
+stop_if_agent_blocked() {
+    agent_blocked || return 0
+    echo "[STOP] $1: ${AGENT_NOTE}"
+    send_telegram "⚠️ inbox-flow 중단 ($1 중): 에이전트를 돌리지 못했다 — ${AGENT_NOTE}"
     exit 0
 }
 
@@ -131,7 +132,7 @@ ${url}"
 }
 
 classify_new_issues() {
-    local numbers=() n output
+    local numbers=() n
 
     while IFS= read -r n; do
         [[ -n "$n" ]] && numbers+=("$n")
@@ -143,11 +144,10 @@ classify_new_issues() {
     fi
 
     echo "[CLASSIFY] ${#numbers[@]}건: ${numbers[*]}"
-    output=$(cd "$HUB_DIR" && "$CLAUDE_BIN" --model "$CLAUDE_MODEL" --dangerously-skip-permissions -p "/inbox-flow
-
-Batch mode (inbox-flow.sh): process only these hub issues, in this order: ${numbers[*]}. Do not send any Telegram messages. Do not run /dev-flow and do not modify code in any repo — only classify, comment, and dispatch as the skill describes." </dev/null 2>&1)
-    printf '%s\n' "$output"
-    stop_if_limit "$output" "이슈 분류"
+    # in-progress 만 붙은 이슈: 이 스크립트가 시작할 때 남은 in-progress 를 다 떼므로, 여기서 보이는 것은
+    # 이번 실행에서 먼저 돈 에이전트가 선점만 하고 멈춘 것이다(Claude 한도 → codex 로 넘어온 경우).
+    run_command_agent "$HUB_DIR" inbox-flow "" "Batch mode (inbox-flow.sh): process only these hub issues, in this order: ${numbers[*]}. Do not send any Telegram messages. Do not run /dev-flow and do not modify code in any repo — only classify, comment, and dispatch as the skill describes. If one of these issues carries the in-progress label and no other state label, an earlier attempt in this same batch run claimed it and then stopped: do not skip it — process it, checking for an existing inbox-dispatch marker first as step 1 says." 2>&1
+    stop_if_agent_blocked "이슈 분류"
 
     for n in "${numbers[@]}"; do
         report_classification "$n"
@@ -197,8 +197,9 @@ last_comment_excerpt() {
         --jq "[.comments[] | select(.author.login == \"${HUB_OWNER}\")] | last | .body // \"\" | .[:500]"
 }
 
+# $1 대상 리포 디렉터리, $2 복사본 이슈 번호.
 run_inbox_dev_flow() {
-    local issue="$1" merge_rule
+    local repo_dir="$1" issue="$2" merge_rule
 
     if [[ "$INBOX_NO_MERGE" == "1" ]]; then
         merge_rule=" DEV_FLOW_NO_MERGE=1 is set: never run gh pr merge. When review approves, add the ${LABEL_READY} label to the PR and leave it open for a human to merge."
@@ -206,12 +207,11 @@ run_inbox_dev_flow() {
         merge_rule=" Merge the PR when review approves."
     fi
 
+    # DEV_FLOW_* 는 에이전트(Claude · codex 모두)가 `env | grep '^DEV_FLOW_'` 로 읽는다.
     # claude -p 는 턴이 끝난 뒤 백그라운드 서브에이전트를 10분만 기다리고 끊는다. dev-flow 가 분석 에이전트를
     # 백그라운드로 띄우고 턴을 끝내면 PR 없이 끝난다(2026-11-15 something-new#32). 끝날 때까지 기다리게 한다.
     CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 DEV_FLOW_DEPLOY=0 DEV_FLOW_NOTIFY=none DEV_FLOW_NO_MERGE="$INBOX_NO_MERGE" DEV_FLOW_REQUIRE_APPROVE=1 \
-        "$CLAUDE_BIN" --model "$CLAUDE_MODEL" --dangerously-skip-permissions -p "/dev-flow ${issue}
-
-Batch mode override (inbox-flow): DEV_FLOW_DEPLOY=0, DEV_FLOW_NOTIFY=none and DEV_FLOW_REQUIRE_APPROVE=1 are set. Do not run deploy.sh. Do not send any Telegram messages — inbox-flow sends the completion notice.${merge_rule} Never merge without a review that returned VERDICT: APPROVE: if the 3rd review still requests changes, skip consensus and handle it as ABORT (PR stays open, needs-human on the issue, unresolved findings commented on both). The PR body must contain \"Closes #${issue}\". If analysis ends in ACTION: COMMENT, always close the issue after commenting — inbox-flow reads an open issue with no PR and no needs-human label as a failure." </dev/null
+        run_command_agent "$repo_dir" dev-flow "$issue" "Batch mode override (inbox-flow): DEV_FLOW_DEPLOY=0, DEV_FLOW_NOTIFY=none and DEV_FLOW_REQUIRE_APPROVE=1 are set. Do not run deploy.sh. Do not send any Telegram messages — inbox-flow sends the completion notice.${merge_rule} Never merge without a review that returned VERDICT: APPROVE: if the 3rd review still requests changes, skip consensus and handle it as ABORT (PR stays open, needs-human on the issue, unresolved findings commented on both). The PR body must contain \"Closes #${issue}\". If analysis ends in ACTION: COMMENT, always close the issue after commenting — inbox-flow reads an open issue with no PR and no needs-human label as a failure."
 }
 
 # 머지는 원격에서만 일어나므로 원래 체크아웃의 기본 브랜치를 원격에 맞춘다.
@@ -249,7 +249,7 @@ ${detail}"
 
 process_dispatched() {
     local n="$1" title labels url ref target_repo target_n repo_name repo_dir
-    local copy_state copy_labels copy_url pr pr_state="" pr_labels="" pr_url="" output reason
+    local copy_state copy_labels copy_url pr pr_state="" pr_labels="" pr_url="" reason
 
     IFS="$SEP" read -r title labels url < <(hub_issue_info "$n")
 
@@ -283,9 +283,8 @@ process_dispatched() {
     # 이전 실행이 dev-flow 를 끝내고 허브 반영 전에 죽었으면 다시 돌리지 않는다.
     if [[ "$copy_state" == "OPEN" ]] && ! { [[ "$pr_state" == "OPEN" ]] && has_label "$pr_labels" "$LABEL_READY"; }; then
         echo "[DEV-FLOW] #${n} → ${ref}"
-        output=$(cd "$repo_dir" && run_inbox_dev_flow "$target_n" 2>&1)
-        printf '%s\n' "$output"
-        stop_if_limit "$output" "${ref} 개발"
+        run_inbox_dev_flow "$repo_dir" "$target_n" 2>&1
+        stop_if_agent_blocked "${ref} 개발"
 
         IFS="$SEP" read -r copy_state copy_labels < <(copy_issue_info "$target_repo" "$target_n")
         pr="$(linked_pr "$target_repo" "$target_n")"
@@ -336,7 +335,7 @@ ${copy_url}"
 clear_stale_in_progress
 classify_new_issues
 
-# claude 가 stdin 을 읽지 않도록 목록을 먼저 다 받아 둔다.
+# 에이전트가 stdin 을 읽지 않도록 목록을 먼저 다 받아 둔다.
 DISPATCHED=()
 while IFS= read -r n; do
     [[ -n "$n" ]] && DISPATCHED+=("$n")
