@@ -12,6 +12,7 @@ class Job:
     name: str
     cron_expr: str
     command: str
+    description: str
     enabled: bool
     skip_if_running: bool
     notify_on_success: bool
@@ -72,6 +73,7 @@ def init_db(conn: sqlite3.Connection) -> None:
             name               TEXT    NOT NULL UNIQUE,
             cron_expr          TEXT    NOT NULL,
             command            TEXT    NOT NULL,
+            description        TEXT    NOT NULL DEFAULT '',
             enabled            INTEGER NOT NULL DEFAULT 1,
             skip_if_running    INTEGER NOT NULL DEFAULT 0,
             notify_on_success  INTEGER NOT NULL DEFAULT 1,
@@ -109,6 +111,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute(
             f"ALTER TABLE jobs ADD COLUMN timeout_seconds REAL NOT NULL DEFAULT {DEFAULT_TIMEOUT_SECONDS}"
         )
+    if "description" not in cols:
+        conn.execute("ALTER TABLE jobs ADD COLUMN description TEXT NOT NULL DEFAULT ''")
+
+
+def clean_description(text: str | None) -> str:
+    """설명은 한 줄로 둔다: 줄바꿈 · 탭 · 이어진 공백을 공백 하나로 줄인다."""
+    return " ".join((text or "").split())
 
 
 def add_job(
@@ -119,16 +128,19 @@ def add_job(
     skip_if_running: bool = False,
     notify_on_success: bool = True,
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    description: str = "",
 ) -> Job:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
     conn.execute(
         """INSERT INTO jobs
-           (name, cron_expr, command, skip_if_running, notify_on_success, timeout_seconds, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+           (name, cron_expr, command, description, skip_if_running, notify_on_success,
+            timeout_seconds, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             name,
             cron_expr,
             command,
+            clean_description(description),
             1 if skip_if_running else 0,
             1 if notify_on_success else 0,
             timeout_seconds,
@@ -184,6 +196,16 @@ def set_job_timeout(conn: sqlite3.Connection, name: str, timeout_seconds: float)
     cur = conn.execute(
         "UPDATE jobs SET timeout_seconds = ?, updated_at = ? WHERE name = ?",
         (timeout_seconds, now, name),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def set_job_description(conn: sqlite3.Connection, name: str, description: str) -> bool:
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    cur = conn.execute(
+        "UPDATE jobs SET description = ?, updated_at = ? WHERE name = ?",
+        (clean_description(description), now, name),
     )
     conn.commit()
     return cur.rowcount > 0
@@ -285,6 +307,8 @@ def _row_to_job(row: sqlite3.Row) -> Job:
         name=row["name"],
         cron_expr=row["cron_expr"],
         command=row["command"],
+        # 읽기 전용으로 여는 쪽(mycron web)은 마이그레이션 전 DB 를 만날 수 있다
+        description=(row["description"] or "") if "description" in row.keys() else "",
         enabled=bool(row["enabled"]),
         skip_if_running=bool(row["skip_if_running"]),
         notify_on_success=bool(row["notify_on_success"]),

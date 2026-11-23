@@ -12,6 +12,18 @@ from .notifier import send as notify
 
 
 TIMEOUT_TYPE = click.FloatRange(min=0, min_open=True)
+# 상태판 카드에 한 줄로 들어가는 글이라 길이를 막아 둔다
+MAX_DESCRIPTION_LENGTH = 200
+
+
+def _clean_description(text: str) -> str:
+    description = database.clean_description(text)
+    if len(description) > MAX_DESCRIPTION_LENGTH:
+        raise click.BadParameter(
+            f"설명은 {MAX_DESCRIPTION_LENGTH}자까지입니다 (지금 {len(description)}자).",
+            param_hint="설명",
+        )
+    return description
 
 
 def _fmt_local(ts: str) -> str:
@@ -54,8 +66,10 @@ def main():
     show_default=True,
     help="작업 실행 제한 시간(초)",
 )
-def add(name, cron_expr, command, skip_if_running, no_success_notify, timeout_seconds):
+@click.option("--description", default="", help="어떤 작업인지 한 줄 설명 (상태판에 표시)")
+def add(name, cron_expr, command, skip_if_running, no_success_notify, timeout_seconds, description):
     """새 작업을 등록합니다."""
+    description = _clean_description(description)
     cfg = load_config()
     conn = database.connect(cfg.db_path)
     database.init_db(conn)
@@ -72,6 +86,7 @@ def add(name, cron_expr, command, skip_if_running, no_success_notify, timeout_se
         skip_if_running=skip_if_running,
         notify_on_success=not no_success_notify,
         timeout_seconds=timeout_seconds,
+        description=description,
     )
     tags = []
     if job.skip_if_running:
@@ -82,6 +97,8 @@ def add(name, cron_expr, command, skip_if_running, no_success_notify, timeout_se
         tags.append(f"timeout={_fmt_timeout(job.timeout_seconds)}s")
     tag_str = f" [{','.join(tags)}]" if tags else ""
     click.echo(f"작업 등록됨: {job.name} ({job.cron_expr}) → {job.command}{tag_str}")
+    if job.description:
+        click.echo(f"설명: {job.description}")
     daemon.signal_reload(cfg)
 
 
@@ -202,6 +219,34 @@ def set_timeout(name, timeout_seconds):
 
     click.echo(f"Timeout 설정됨: {name} ({_fmt_timeout(timeout_seconds)}s)")
     daemon.signal_reload(cfg)
+
+
+@main.command()
+@click.argument("name")
+@click.argument("description", required=False, default=None)
+def describe(name, description):
+    """작업에 한 줄 설명을 붙입니다. 설명을 생략하면 지금 설명을 보여 주고, "" 를 주면 지웁니다."""
+    if description is not None:
+        description = _clean_description(description)
+    cfg = load_config()
+    conn = database.connect(cfg.db_path)
+    database.init_db(conn)
+
+    job = database.get_job(conn, name)
+    if not job:
+        click.echo(f"오류: '{name}' 작업을 찾을 수 없습니다.", err=True)
+        sys.exit(1)
+
+    if description is None:
+        click.echo(job.description)
+        return
+
+    # 설명은 스케줄과 무관하므로 데몬을 리로드하지 않는다
+    database.set_job_description(conn, name, description)
+    if description:
+        click.echo(f"설명 설정됨: {name} — {description}")
+    else:
+        click.echo(f"설명 지움: {name}")
 
 
 # ──────────────────────────── execution ────────────────────────────

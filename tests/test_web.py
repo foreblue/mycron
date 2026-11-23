@@ -30,7 +30,10 @@ SECRET_COMMAND = "s3cr3tCmdValue99"
 SECRET_BEARER = "tok-ABCDEF123456"
 SECRET_STDOUT = "ghp_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"
 SECRET_STDERR = "0123456789abcdef0123456789abcdef01234567"
-SECRETS = (SECRET_COMMAND, SECRET_BEARER, SECRET_STDOUT, SECRET_STDERR)
+SECRETS = (SECRET_COMMAND, SECRET_BEARER, SECRET_STDOUT, SECRET_STDERR, "d3scSecretValue77")
+
+REPORT_DESCRIPTION = "어제 매출을 모아 텔레그램으로 보냄"
+SECRET_DESCRIPTION = "d3scSecretValue77"
 
 SPECIAL_NAME = "백업 a/b"
 SPECIAL_PATH = "/jobs/%EB%B0%B1%EC%97%85%20a%2Fb"
@@ -66,6 +69,7 @@ def _seed(path: Path) -> None:
         skip_if_running=True,
         notify_on_success=False,
         timeout_seconds=300,
+        description=REPORT_DESCRIPTION,
     )
     for minutes in (3000, 1500, 60):
         _log(conn, report, minutes, stdout="report done\n")
@@ -76,6 +80,7 @@ def _seed(path: Path) -> None:
         "*/15 * * * *",
         f'curl -s -H "Authorization: Bearer {SECRET_BEARER}" https://example.com/sync?mode=full '
         f"&& API_KEY={SECRET_COMMAND} /usr/local/bin/sync --verbose --retries 3",
+        description=f"<b>원격</b> 저장소와 맞춤 (token={SECRET_DESCRIPTION})",
     )
     _log(conn, flaky, 45, stdout="synced 10 items\n")
     _log(conn, flaky, 30, stdout="synced 12 items\n")
@@ -281,6 +286,182 @@ def test_head_has_no_body(site):
     assert status == 200
     assert int(headers["Content-Length"]) > 0
     assert body == ""
+
+
+# ──────────────────────────── 작업 설명 ────────────────────────────
+
+
+def _card(page: str, name: str) -> str:
+    """목록 페이지에서 그 작업의 카드(<article>) 하나를 잘라 낸다."""
+    for card in page.split("<article")[1:]:
+        card = card.split("</article>")[0]
+        if f">{name}</a></h3>" in card:
+            return card
+    raise AssertionError(f"카드 없음: {name}")
+
+
+def test_card_shows_description_right_under_the_name(site):
+    card = _card(site.get("/"), "daily-report")
+    assert f'<p class="desc">{REPORT_DESCRIPTION}</p>' in card
+    # 이름(머리) 바로 아래, 스케줄 줄보다 위
+    assert card.index("</header>") < card.index('class="desc"') < card.index('class="sched"')
+
+
+def test_card_without_description_shows_nothing(site):
+    page = site.get("/")
+    for name in ("disk-guard", "slow-batch", "old-job"):
+        assert 'class="desc"' not in _card(page, name)
+    assert page.count('<p class="desc">') == 2  # daily-report, flaky-sync
+
+
+def test_job_detail_shows_description_at_the_top(site):
+    page = site.get("/jobs/daily-report")
+    assert f'<h1>daily-report</h1><p class="desc">{REPORT_DESCRIPTION}</p>' in page
+    assert page.index('class="desc"') < page.index('class="sched"') < page.index("<h4>커맨드</h4>")
+
+    assert 'class="desc"' not in site.get("/jobs/disk-guard")
+
+
+def test_search_text_includes_description(site):
+    card = _card(site.get("/"), "daily-report")
+    search = card.split('data-search="')[1].split('"')[0]
+    assert REPORT_DESCRIPTION in search
+    assert "daily-report" in search
+    assert "설명" in site.get("/").split('id="q"')[1].split(">")[0]  # 검색창 안내 글
+
+
+def test_description_is_escaped_and_redacted(site):
+    for path in ("/", "/jobs/flaky-sync"):
+        page = site.get(path)
+        assert "<b>원격</b>" not in page
+        assert "&lt;b&gt;원격&lt;/b&gt; 저장소와 맞춤 (token=[가림])" in page
+        assert SECRET_DESCRIPTION not in page
+
+
+def test_status_api_has_description(site):
+    jobs = {job["name"]: job for job in json.loads(site.get("/api/status"))["jobs"]}
+    assert jobs["daily-report"]["description"] == REPORT_DESCRIPTION
+    assert jobs["disk-guard"]["description"] == ""
+    assert SECRET_DESCRIPTION not in jobs["flaky-sync"]["description"]
+
+
+def test_pages_render_from_a_db_without_description_column(tmp_path):
+    """새 코드가 먼저 깔리고 DB 는 아직 옛 모양일 때도 상태판이 떠야 한다 (읽기 전용이라 못 고친다)."""
+    db_path = tmp_path / "mycron.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript("""
+        CREATE TABLE jobs (
+            id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+            name               TEXT    NOT NULL UNIQUE,
+            cron_expr          TEXT    NOT NULL,
+            command            TEXT    NOT NULL,
+            enabled            INTEGER NOT NULL DEFAULT 1,
+            created_at         TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now')),
+            updated_at         TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now')),
+            skip_if_running    INTEGER NOT NULL DEFAULT 0,
+            notify_on_success  INTEGER NOT NULL DEFAULT 1,
+            timeout_seconds    REAL    NOT NULL DEFAULT 3600
+        );
+        CREATE TABLE logs (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id      INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+            started_at  TEXT    NOT NULL,
+            finished_at TEXT    NOT NULL,
+            duration_ms INTEGER NOT NULL,
+            exit_code   INTEGER NOT NULL,
+            stdout      TEXT,
+            stderr      TEXT,
+            notified    INTEGER NOT NULL DEFAULT 0
+        );
+        INSERT INTO jobs (name, cron_expr, command) VALUES ('legacy', '0 3 * * *', '/bin/true');
+    """)
+    conn.commit()
+    conn.close()
+    before = _sha256(db_path)
+
+    cfg = Config(db_path=db_path, pid_file=tmp_path / "mycron.pid", daemon_log=tmp_path / "daemon.log")
+    app = web.WebApp(cfg)
+    for path in ("/", "/jobs/legacy"):
+        response = app.handle("GET", path, None)
+        assert response.status == 200
+        page = response.body.decode()
+        assert "legacy" in page and 'class="desc"' not in page
+    assert json.loads(app.handle("GET", "/api/status", None).body)["jobs"][0]["description"] == ""
+    assert _sha256(db_path) == before
+
+
+# ──────────────────────────── 설명 채우기 스크립트 ────────────────────────────
+
+FILL_SCRIPT = Path(__file__).resolve().parents[1] / "tools" / "fill_descriptions.sh"
+
+
+def _fake_mycron(tmp_path: Path, db_path: Path) -> Path:
+    """임시 DB 를 보는 mycron 실행 파일 (스크립트가 MYCRON 으로 부른다)."""
+    src = Path(__file__).resolve().parents[1] / "src"
+    launcher = tmp_path / "mycron-test"
+    launcher.write_text(
+        f"#!{sys.executable}\n"
+        "import sys\n"
+        f"sys.path.insert(0, {str(src)!r})\n"
+        "from pathlib import Path\n"
+        "from unittest.mock import Mock\n"
+        "from mycron import cli\n"
+        "from mycron.config import Config\n"
+        f"root = Path({str(db_path.parent)!r})\n"
+        f"cfg = Config(db_path=Path({str(db_path)!r}), pid_file=root / 'mycron.pid', daemon_log=root / 'daemon.log')\n"
+        "cli.load_config = lambda: cfg\n"
+        "cli.daemon = Mock()\n"
+        "cli.main()\n"
+    )
+    launcher.chmod(0o755)
+    return launcher
+
+
+def _run_fill(launcher: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["/bin/bash", str(FILL_SCRIPT), *args],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env={**os.environ, "MYCRON": str(launcher)},
+    )
+
+
+def test_fill_script_fills_only_empty_descriptions(tmp_path):
+    db_path = tmp_path / "mycron.db"
+    conn = database.connect(db_path)
+    database.init_db(conn)
+    database.add_job(conn, "inbox-flow", "*/15 * * * *", "/bin/true")
+    database.add_job(conn, "disk-guard", "0 */6 * * *", "/bin/true", description="내가 쓴 설명")
+    database.add_job(conn, "not-in-the-list", "0 0 * * *", "/bin/true")
+    launcher = _fake_mycron(tmp_path, db_path)
+
+    dry = _run_fill(launcher, "--dry-run")
+    assert dry.returncode == 0, dry.stderr
+    assert "채울 것 inbox-flow" in dry.stdout
+    assert database.get_job(conn, "inbox-flow").description == ""
+
+    done = _run_fill(launcher)
+    assert done.returncode == 0, done.stderr
+    assert database.get_job(conn, "inbox-flow").description == "deepheart-dev 요청 이슈를 분류해 답하거나 개발로 넘김"
+    assert database.get_job(conn, "disk-guard").description == "내가 쓴 설명"  # 있는 설명은 두고
+    assert database.get_job(conn, "not-in-the-list").description == ""
+    assert "채움 1 · 그대로 1 · 없음 26" in done.stdout  # 없는 작업은 건너뛴다
+
+    forced = _run_fill(launcher, "--force")
+    assert forced.returncode == 0, forced.stderr
+    assert database.get_job(conn, "disk-guard").description != "내가 쓴 설명"
+
+
+def test_fill_script_descriptions_are_short_one_liners():
+    import re
+
+    entries = re.findall(r'^fill (\S+) "([^"\n]+)"$', FILL_SCRIPT.read_text(), flags=re.MULTILINE)
+    assert len(entries) == 28
+    assert len({name for name, _text in entries}) == 28
+    for name, text in entries:
+        assert 10 <= len(text) <= 60, (name, text)
+        assert "$" not in text and "`" not in text and "\\" not in text, name
 
 
 # ──────────────────────────── 가림 처리 ────────────────────────────

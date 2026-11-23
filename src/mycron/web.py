@@ -109,6 +109,7 @@ class JobView:
     schedule: str
     command: str
     next_run: datetime | None
+    description: str = ""
     runs: list[RunView] = field(default_factory=list)
     running: list[RunningView] = field(default_factory=list)
 
@@ -397,6 +398,7 @@ class Monitor:
             schedule=describe(job.cron_expr),
             command=redact(job.command),
             next_run=next_fire_time(job.cron_expr, now) if job.enabled else None,
+            description=redact(job.description),
             runs=runs,
         )
         view.running = [
@@ -475,6 +477,7 @@ def overview_dict(overview: Overview) -> dict:
         "jobs": [
             {
                 "name": v.job.name,
+                "description": v.description,
                 "cron": v.job.cron_expr,
                 "schedule": v.schedule,
                 "enabled": v.job.enabled,
