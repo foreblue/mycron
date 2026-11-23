@@ -5,10 +5,10 @@
 # 경로 · 모델은 환경 변수로 바꿀 수 있다(시험에서 가짜 실행 파일을 끼울 때 쓴다).
 CLAUDE_BIN="${CLAUDE_BIN:-/Users/dysim/.local/bin/claude}"
 CLAUDE_MODEL="${CLAUDE_MODEL:-claude-opus-5-5}"   # 배치 claude 호출 모델(서브에이전트도 따라감)
-# claude 를 못 쓸 때 대신 도는 codex. ~/.codex/config.toml 의 기본 모델(gpt-5.5)은 ChatGPT 계정에서
-# "not supported" 로 거절되므로 모델을 명시한다.
+# claude 를 못 쓸 때 대신 도는 codex. ~/.codex/config.toml 의 기본 모델은 2026-11-23 gpt-6.2-sol 로 바꿨지만,
+# 배치는 설정 파일과 상관없이 같은 모델로 돌게 명시한다.
 CODEX_BIN="${CODEX_BIN:-/opt/homebrew/bin/codex}"
-CODEX_MODEL="${CODEX_MODEL:-gpt-6.2-astra}"
+CODEX_MODEL="${CODEX_MODEL:-gpt-6.2-sol}"
 PYTHON_BIN="${PYTHON_BIN:-/Users/dysim/workspace/mycron/.venv/bin/python3}"
 # Claude 슬래시 커맨드 파일(/inbox-flow, /dev-flow)이 있는 곳 — codex 로 돌 때 본문을 프롬프트에 펼친다.
 CLAUDE_COMMANDS_DIR="${CLAUDE_COMMANDS_DIR:-${HOME}/.claude/commands}"

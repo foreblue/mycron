@@ -218,7 +218,7 @@ def test_claude_missing_runs_codex_with_same_prompt(world):
     assert argv[:7] == [
         "exec",
         "-m",
-        "gpt-6.2-astra",
+        "gpt-6.2-sol",
         "--dangerously-bypass-approvals-and-sandbox",
         "--skip-git-repo-check",
         "--color",
