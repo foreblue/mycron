@@ -341,3 +341,51 @@ def install():
 def uninstall():
     """macOS LaunchAgent를 해제합니다."""
     launchd.uninstall()
+
+
+# ──────────────────────────── web (읽기 전용 상태판) ────────────────────────────
+
+_WEB_OPTIONS = [
+    click.option("--host", default="127.0.0.1", show_default=True, help="바인드 주소"),
+    click.option("--port", default=8765, show_default=True, type=click.IntRange(1, 65535), help="포트"),
+    click.option(
+        "--allow-host",
+        "allow_hosts",
+        multiple=True,
+        help="접속을 허용할 Host 이름 (게이트웨이 이름 등, 여러 번 지정 가능). IP · localhost 는 항상 허용",
+    ),
+]
+
+
+def _web_options(func):
+    for option in reversed(_WEB_OPTIONS):
+        func = option(func)
+    return func
+
+
+@main.command()
+@_web_options
+@click.option("--verbose", is_flag=True, help="요청 로그를 남깁니다")
+def web(host, port, allow_hosts, verbose):
+    """작업과 실행 상태를 브라우저로 보는 읽기 전용 웹서비스를 띄웁니다."""
+    from . import web as webserver
+
+    cfg = load_config()
+    try:
+        webserver.serve(cfg, host=host, port=port, allow_hosts=allow_hosts, verbose=verbose)
+    except webserver.PortInUse as e:
+        click.echo(f"오류: {e} --port 로 다른 포트를 지정하세요.", err=True)
+        sys.exit(1)
+
+
+@main.command("web-install")
+@_web_options
+def web_install(host, port, allow_hosts):
+    """웹서비스를 macOS LaunchAgent로 등록합니다 (재시작 후 자동 실행)."""
+    launchd.install_web(host, port, allow_hosts)
+
+
+@main.command("web-uninstall")
+def web_uninstall():
+    """웹서비스 LaunchAgent를 해제합니다."""
+    launchd.uninstall_web()
