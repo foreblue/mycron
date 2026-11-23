@@ -19,6 +19,18 @@ pipx로 설치된 경우 `mycron <command>`로 직접 사용 가능.
 - 커맨드에 Python 스크립트가 포함되면 `/opt/homebrew/bin/python3`의 절대경로를 사용한다
 - 스크립트 경로도 절대경로로 지정한다
 
+### 작업 설명
+
+작업을 등록할 때는 어떤 작업인지 한 줄 설명을 함께 넣는다 (40자 안팎, "무엇을 · 어디로"). 상태판 카드의 이름 아래에 보인다.
+
+```bash
+.venv/bin/mycron add --name <이름> --cron "<cron표현식>" --command "<커맨드>" --description "<설명>"
+.venv/bin/mycron describe <이름> "<설명>"   # 나중에 붙이거나 고칠 때. 설명 생략 시 지금 값 출력
+```
+
+- 설명은 스케줄과 무관해서 데몬을 리로드하지 않는다
+- 여러 작업을 한꺼번에 채우는 초안은 `tools/fill_descriptions.sh` (`--dry-run`, `--force`)
+
 ### 경고(ALERT) 종료 코드
 
 감시 작업이 "실행은 정상인데 사람이 봐야 할 상태"(예: 디스크 부족)를 알릴 때는 `exit 10` 으로 끝낸다.

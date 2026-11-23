@@ -45,15 +45,21 @@ mycron status
 
 | 명령어 | 설명 |
 |---|---|
-| `mycron add --name NAME --cron EXPR --command CMD [--timeout SECONDS]` | 작업 등록 |
+| `mycron add --name NAME --cron EXPR --command CMD [--timeout SECONDS] [--description TEXT]` | 작업 등록 |
 | `mycron remove NAME` | 작업 삭제 |
 | `mycron list` | 활성 작업 목록 |
 | `mycron list --all` | 전체 작업 목록 (비활성 포함) |
 | `mycron enable NAME` | 작업 활성화 |
 | `mycron disable NAME` | 작업 비활성화 |
 | `mycron set-timeout NAME --timeout SECONDS` | 작업별 실행 제한 시간 변경 |
+| `mycron describe NAME "설명"` | 어떤 작업인지 한 줄 설명을 붙임 (상태판에 표시) |
+| `mycron describe NAME` | 지금 설명을 출력 (`mycron describe NAME ""` 는 설명 지움) |
 
 작업 timeout 기본값은 3600초입니다.
+
+설명은 한 줄(200자까지)로 저장되고 스케줄에는 영향을 주지 않습니다. 데몬 리로드도 일어나지 않습니다.
+여러 작업의 설명을 한꺼번에 채울 때는 `tools/fill_descriptions.sh` 처럼 `mycron describe` 를 이어 부르면 됩니다
+(`--dry-run` 으로 미리 보기, 이미 설명이 있는 작업은 `--force` 를 줘야 덮어씁니다).
 
 ### 실행 및 로그
 
@@ -85,10 +91,11 @@ mycron status
 | `mycron web-install [--host --port --allow-host]` | 웹서비스를 LaunchAgent(`com.dysim.mycron-web`)로 등록 |
 | `mycron web-uninstall` | 웹서비스 LaunchAgent 해제 |
 
-- 보여 주는 것: 작업 목록(cron 식 풀이 · 활성 여부 · 옵션 · 커맨드), 다음 실행 예정, 마지막 실행 결과, 최근 실패, 지금 실행 중인 작업, 작업별 실행 기록과 출력 꼬리, 데몬 상태
+- 보여 주는 것: 작업 목록(한 줄 설명 · cron 식 풀이 · 활성 여부 · 옵션 · 커맨드), 다음 실행 예정, 마지막 실행 결과, 최근 실패, 지금 실행 중인 작업, 작업별 실행 기록과 출력 꼬리, 데몬 상태
 - 경로: `/` 목록 · `/jobs/<이름>` 상세(`?n=50` 으로 기록 수 변경) · `/healthz` 헬스 체크(JSON) · `/api/status` 요약(JSON)
 - 읽기 전용이다. DB 는 sqlite `mode=ro` 로만 열고, GET/HEAD 외 요청은 405 로 거절한다. 작업을 켜고 끄거나 실행하는 기능은 없다
-- 커맨드와 출력에서 토큰 · 키처럼 보이는 값(`KEY=...`, `Bearer ...`, 긴 hex · base64 등)은 `[가림]` 으로 바꿔 보여 준다. 40자리 git SHA 같은 무해한 값도 가려질 수 있다
+- 작업 설명(`mycron describe`)은 카드의 이름 아래와 상세 맨 위에 보이고, 검색에도 걸린다. 설명이 없는 작업은 그 줄이 아예 없다
+- 설명 · 커맨드 · 출력에서 토큰 · 키처럼 보이는 값(`KEY=...`, `Bearer ...`, 긴 hex · base64 등)은 `[가림]` 으로 바꿔 보여 준다. 40자리 git SHA 같은 무해한 값도 가려질 수 있다
 - "지금 실행 중" 은 데몬 로그(`daemon.log`)의 시작 · 종료 기록으로 판단한다. `mycron run` 으로 직접 돌린 실행은 잡히지 않는다
 - 바깥 CDN · 글꼴 · 스크립트를 쓰지 않는다 (CSS · JS 인라인)
 - 포트가 이미 쓰이고 있으면 띄우지 않고 오류로 끝난다

@@ -230,6 +230,13 @@ def _status_badges(view: JobView) -> str:
     return "".join(badges)
 
 
+def _description(view: JobView) -> str:
+    """어떤 작업인지 한 줄. 설명이 없으면 아무것도 내지 않는다."""
+    if not view.description:
+        return ""
+    return f'<p class="desc">{escape(view.description)}</p>'
+
+
 def _schedule(view: JobView) -> str:
     return f'<p class="sched">{escape(view.schedule)} <code>{escape(view.job.cron_expr)}</code></p>'
 
@@ -254,7 +261,7 @@ def _job_card(view: JobView, now: datetime, daemon_running: bool) -> str:
         classes.append("is-fail")
     if view.running:
         classes.append("is-run")
-    search = " ".join([job.name, view.schedule, job.cron_expr, view.command]).lower()
+    search = " ".join([job.name, view.description, view.schedule, job.cron_expr, view.command]).lower()
     flags = (
         f'data-enabled="{int(job.enabled)}" data-disabled="{int(not job.enabled)}" '
         f'data-failed="{int(view.recent_failures > 0)}" data-running="{int(bool(view.running))}"'
@@ -263,7 +270,7 @@ def _job_card(view: JobView, now: datetime, daemon_running: bool) -> str:
         f'<article class="{" ".join(classes)}" {flags} data-search="{escape(search)}">'
         f'<header><h3><a href="jobs/{quote(job.name, safe="")}">{escape(job.name)}</a></h3>'
         f'<div class="badges">{_status_badges(view)}</div></header>'
-        f"{_schedule(view)}{_facts(view, now, daemon_running)}{_command(view.command)}"
+        f"{_description(view)}{_schedule(view)}{_facts(view, now, daemon_running)}{_command(view.command)}"
         "</article>"
     )
 
@@ -361,7 +368,7 @@ def render_overview(overview: Overview) -> str:
   <h2>작업</h2>
   <div class="filters">
     <div class="chips" role="group" aria-label="작업 걸러 보기">{filter_bar}</div>
-    <input id="q" type="search" placeholder="이름 · 커맨드 검색" aria-label="작업 검색" autocomplete="off">
+    <input id="q" type="search" placeholder="이름 · 설명 · 커맨드 검색" aria-label="작업 검색" autocomplete="off">
   </div>
   {no_jobs}
   <div class="jobs" id="jobs">{cards}</div>
@@ -401,7 +408,7 @@ def render_job(detail: JobDetail) -> str:
     body = f"""
 <nav class="crumb"><a href="../">← 작업 목록</a></nav>
 <header class="top">
-  <div><h1>{escape(job.name)}</h1><div class="badges">{_status_badges(view)}</div></div>
+  <div><h1>{escape(job.name)}</h1>{_description(view)}<div class="badges">{_status_badges(view)}</div></div>
   {_daemon_block(detail.daemon, now)}
 </header>
 {running}
@@ -538,6 +545,9 @@ background:var(--off-bg);color:var(--off)}
 .b-fail,.b-timeout{background:var(--fail-bg);color:var(--fail)}
 .b-alert,.b-warn{background:var(--alert-bg);color:var(--alert)}
 .b-run{background:var(--run-bg);color:var(--run)}
+.desc{margin-top:4px;font-size:14px;overflow-wrap:anywhere}
+.top .desc{font-size:15px;margin:2px 0 8px;max-width:60ch}
+.job.is-off .desc{color:var(--muted)}
 .sched{margin:6px 0 10px;font-weight:600}
 .sched code{font-weight:400;margin-left:4px;color:var(--muted)}
 .facts{margin:0;display:grid;gap:6px}
