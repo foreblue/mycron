@@ -4,6 +4,7 @@ import os
 import signal
 import sys
 import time
+from dataclasses import dataclass
 
 from .config import Config, load_config
 from . import db as database
@@ -54,6 +55,23 @@ def status(cfg: Config) -> None:
     else:
         print("mycron is not running (stale PID file)")
         cfg.pid_file.unlink(missing_ok=True)
+
+
+@dataclass
+class DaemonStatus:
+    pid: int | None
+    running: bool
+
+    @property
+    def stale(self) -> bool:
+        """PID 파일은 있는데 프로세스가 없는 상태."""
+        return self.pid is not None and not self.running
+
+
+def get_status(cfg: Config) -> DaemonStatus:
+    """status() 와 같은 판단을 값으로 돌려준다. 읽기만 하고 PID 파일은 건드리지 않는다."""
+    pid = _read_pid(cfg)
+    return DaemonStatus(pid=pid, running=pid is not None and _is_running(cfg))
 
 
 def signal_reload(cfg: Config) -> None:

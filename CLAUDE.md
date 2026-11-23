@@ -54,6 +54,19 @@ mycron stop && mycron start
 
 데몬 운영 로그: `~/.mycron/daemon.log`
 
+## 웹 상태판 (읽기 전용)
+
+```bash
+.venv/bin/mycron web                 # http://127.0.0.1:8765/ (포그라운드)
+mycron web-install                   # LaunchAgent com.dysim.mycron-web 로 상시 실행
+mycron web-uninstall
+```
+
+- 코드는 `src/mycron/web.py`(서버 · 데이터), `webui.py`(화면), `redact.py`(가림), `crontext.py`(cron 식 풀이)
+- DB 는 `database.connect_readonly()` 로만 연다. 쓰기 경로를 추가하지 않는다
+- 헬스 체크는 `/healthz`. 게이트웨이 이름으로 붙일 때는 `--allow-host <이름>` 이 필요하다
+- 로그: `~/.mycron/web-stdout.log`, `~/.mycron/web-stderr.log` (LaunchAgent 로 띄웠을 때)
+
 ## 텔레그램 알림 설정
 
 `~/.mycron/config.toml` 파일에 설정:

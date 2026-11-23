@@ -34,6 +34,29 @@ class Log:
     notified: bool
 
 
+@dataclass
+class RunSummary:
+    """출력 본문 없이 실행 결과만 담는다 (목록 화면용)."""
+
+    id: int
+    job_id: int
+    started_at: str
+    finished_at: str
+    duration_ms: int
+    exit_code: int
+    stderr_head: str | None
+    notified: bool
+
+
+def connect_readonly(db_path: Path) -> sqlite3.Connection:
+    """읽기 전용 연결을 연다. 파일이 없으면 만들지 않고 sqlite3.OperationalError 를 낸다."""
+    uri = f"{Path(db_path).resolve().as_uri()}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True, check_same_thread=False, timeout=5)
+    conn.execute("PRAGMA query_only=ON")
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
 def connect(db_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
@@ -210,6 +233,40 @@ def get_logs(conn: sqlite3.Connection, job_id: int | None = None, limit: int = 2
             (limit,),
         ).fetchall()
     return [_row_to_log(r) for r in rows]
+
+
+def recent_runs_by_job(conn: sqlite3.Connection, per_job: int = 10) -> dict[int, list[RunSummary]]:
+    """작업마다 최근 실행 per_job 건을 최신순으로 돌려준다. stdout/stderr 본문은 읽지 않는다."""
+    rows = conn.execute(
+        """WITH ranked AS (
+               SELECT id,
+                      ROW_NUMBER() OVER (
+                          PARTITION BY job_id ORDER BY started_at DESC, id DESC
+                      ) AS rn
+               FROM logs
+           )
+           SELECT l.id, l.job_id, l.started_at, l.finished_at, l.duration_ms, l.exit_code,
+                  substr(l.stderr, 1, 80) AS stderr_head, l.notified
+           FROM ranked r JOIN logs l ON l.id = r.id
+           WHERE r.rn <= ?
+           ORDER BY l.job_id, r.rn""",
+        (per_job,),
+    ).fetchall()
+    runs: dict[int, list[RunSummary]] = {}
+    for row in rows:
+        runs.setdefault(row["job_id"], []).append(
+            RunSummary(
+                id=row["id"],
+                job_id=row["job_id"],
+                started_at=row["started_at"],
+                finished_at=row["finished_at"],
+                duration_ms=row["duration_ms"],
+                exit_code=row["exit_code"],
+                stderr_head=row["stderr_head"],
+                notified=bool(row["notified"]),
+            )
+        )
+    return runs
 
 
 def prune_logs(conn: sqlite3.Connection, retention_days: int) -> int:
